@@ -1,0 +1,10 @@
+function(testcase target)
+	add_executable(${target}_test ${target}.c)
+	target_link_libraries(${target}_test gamesh)
+	target_include_directories(${target}_test ../src)
+	add_test(NAME ${target} COMMAND ${target}_test)
+endfunction(testcase)
+
+add_executable(gamesh_fd_manager_test gamesh_fd_manager.c ../src/fd-manager.c)
+target_include_directories(gamesh_fd_manager_test PUBLIC ../src)
+add_test(NAME gamesh_fd_manager COMMAND gamesh_fd_manager_test)

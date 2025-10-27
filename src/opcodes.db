@@ -1,0 +1,8 @@
+gamesh_input_keyboard	1
+gamesh_input_mouse	2
+gamesh_input_gamepad	3
+gamesh_sprite_request	4
+gamesh_sprite	5
+gamesh_collision_request	6
+gamesh_collision	7
+gamesh_exit	8
