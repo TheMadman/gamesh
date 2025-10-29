@@ -23,15 +23,58 @@
 extern "C" {
 #endif
 
+#include <sys/types.h>
+
 /**
  * \file
  *
  * This module provides a container interface for file descriptors.
  */
 
+/**
+ * \brief The type representing a file descriptor manager object.
+ */
 typedef struct fd_manager fd_manager_t;
 
+/**
+ * \brief Calculates the size, in bytes, for an appropriate buffer to
+ * 	initialize an fd manager.
+ *
+ * \param capacity The number of file descriptors to store.
+ * \returns The size, in bytes, necessary for the store, or <0 on error.
+ */
+ssize_t fd_manager_size(int capacity);
+
+/**
+ * \brief Initializes the given memory buffer for a manager of the
+ * 	given capacity.
+ *
+ * For most applications, consider using fd_manager(), which will
+ * automatically allocate the correct amount of memory.
+ *
+ * It is a memory error to allocate less memory than fd_manager_size()
+ * reports for the given capacity.
+ *
+ * \param manager A pointer to the memory to initialize.
+ * \param capacity The number of file descriptors to store.
+ *
+ * \sa fd_manager()
+ */
+void fd_manager_init(fd_manager_t *manager, int capacity);
+
+/**
+ * \brief Allocates an fd_manager_t for the given capacity.
+ *
+ * Must be freed with fd_manager_free().
+ *
+ * \param capacity The number of file descriptors to store.
+ * \returns A valid pointer on success or NULL on failure.
+ *
+ * \sa fd_manager_free()
+ */
 fd_manager_t *fd_manager(int capacity);
+
+
 int fd_manager_add(fd_manager_t *manager, int fd);
 int fd_manager_first(fd_manager_t *manager);
 int fd_manager_next(fd_manager_t *manager, int fd);

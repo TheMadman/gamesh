@@ -10,23 +10,35 @@ struct fd_manager {
 	int fds[];
 };
 
-fd_manager_t *fd_manager(int capacity)
+ssize_t fd_manager_size(int capacity)
 {
 	if (capacity <= 0)
+		return -1;
+
+	const size_t array_bytes = sizeof(int) * capacity;
+	return sizeof(fd_manager_t) + array_bytes;
+}
+
+void fd_manager_init(fd_manager_t *manager, int capacity)
+{
+	manager->first = -1;
+	manager->capacity = capacity;
+	for (int i = 0; i < capacity; i++)
+		manager->fds[i] = -1;
+}
+
+fd_manager_t *fd_manager(int capacity)
+{
+	const ssize_t size = fd_manager_size(capacity);
+	if (size < 0)
 		return NULL;
 
-	const size_t
-		array_bytes = sizeof(int) * capacity,
-		total = sizeof(fd_manager_t) + array_bytes;
-
-	fd_manager_t *const result = malloc(total);
+	fd_manager_t *const result = malloc(size);
 	if (!result)
 		return NULL;
 
-	result->first = -1;
-	result->capacity = capacity;
-	for (int i = 0; i < capacity; i++)
-		result->fds[i] = -1;
+	fd_manager_init(result, capacity);
+
 	return result;
 }
 
