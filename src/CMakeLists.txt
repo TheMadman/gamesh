@@ -19,3 +19,5 @@ install(TARGETS gamesh
 	DESTINATION lib)
 install(TARGETS game-runner
 	DESTINATION bin)
+install(FILES gamesh/gamesh.h
+	DESTINATION include)
