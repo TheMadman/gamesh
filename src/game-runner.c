@@ -4,10 +4,14 @@
 
 #include <srvsh.h>
 
+#include <string.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
 
 #include "gamesh/game-runner.h"
 #include "gamesh/gamesh.h"
+#include "gamesh/fd-manager.h"
 
 #define DEFAULT_HEIGHT 720
 #define DEFAULT_WIDTH 1280
@@ -16,24 +20,45 @@ SDL_Window *window;
 SDL_Renderer *renderer;
 SDL_Texture *texture;
 
-int
-	gamesh_input_keyboard,
-	gamesh_input_mouse,
-	gamesh_input_gamepad,
-	gamesh_sprite,
-	gamesh_collision,
-	gamesh_exit;
+#define MESSAGE_LIST(PROCESSOR) \
+	PROCESSOR(gamesh_exit) \
+	PROCESSOR(gamesh_input_keyboard) \
+	PROCESSOR(gamesh_input_mouse) \
+	PROCESSOR(gamesh_input_gamepad) \
+	PROCESSOR(gamesh_sprite) \
+	PROCESSOR(gamesh_collision) \
+	PROCESSOR(gamesh_event_fd_request) \
+	PROCESSOR(gamesh_event_fd_response)
 
-void handle_client_messages(
-	int fd,
-	int opcode,
-	void *buf,
-	int buflen,
-	struct msghdr header,
-	void *context
-)
+#define GLOBAL(MESSAGE) int MESSAGE;
+MESSAGE_LIST(GLOBAL)
+#undef GLOBAL
+
+fd_manager_t *client_event_fds = NULL;
+
+static ssize_t send_fd(int receiver, int opcode, int data)
 {
-	SDL_AppResult *result = context;
+	union {
+		struct cmsghdr header;
+		char buf[CMSG_SPACE(sizeof(data))];
+	} cmsg = {
+		.header = {
+			.cmsg_level = SOL_SOCKET,
+			.cmsg_type = SCM_RIGHTS,
+			.cmsg_len = CMSG_LEN(sizeof(data)),
+		},
+	};
+
+	memcpy(CMSG_DATA(&cmsg.header), &data, sizeof(data));
+
+	return sendmsgop(
+		receiver,
+		opcode,
+		NULL,
+		0,
+		&cmsg.header,
+		sizeof(cmsg)
+	);
 }
 
 ssize_t write_input(int fd, SDL_Event *event)
@@ -66,6 +91,44 @@ ssize_t write_input(int fd, SDL_Event *event)
 	}
 }
 
+static void send_event_fd_response(int fd)
+{
+	int eventfds[2] = { 0 };
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, eventfds) < 0) {
+		// sending a response with no file descriptors to indicate
+		// an error
+		writeop(fd, gamesh_event_fd_response, NULL, 0);
+		return;
+	}
+
+	if (fd_manager_add(client_event_fds, eventfds[1]) < 0) {
+		writeop(fd, gamesh_event_fd_response, NULL, 0);
+		return;
+	}
+
+	if (send_fd(fd, gamesh_event_fd_response, eventfds[0]) < 0) {
+		writeop(fd, gamesh_event_fd_response, NULL, 0);
+		return;
+	}
+
+	close(eventfds[0]);
+}
+
+static void handle_client_messages(
+	int fd,
+	int opcode,
+	void *buf,
+	int buflen,
+	struct msghdr header,
+	void *context
+)
+{
+	SDL_AppResult *result = context;
+
+	if (opcode == gamesh_event_fd_request)
+		send_event_fd_response(fd);
+}
+
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 {
 	opcode_db *db = open_opcode_db();
@@ -74,16 +137,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 		return SDL_APP_FAILURE;
 	}
 
+#define STRUCT(MESSAGE) { #MESSAGE, &MESSAGE },
+
 	static const struct message {
 		const char *name;
 		int *code;
 	} messages[] = {
-		{"gamesh_input_keyboard", &gamesh_input_keyboard},
-		{"gamesh_input_mouse", &gamesh_input_mouse},
-		{"gamesh_input_gamepad", &gamesh_input_gamepad},
-		{"gamesh_sprite", &gamesh_sprite},
-		{"gamesh_collision", &gamesh_collision},
-		{"gamesh_exit", &gamesh_exit},
+		MESSAGE_LIST(STRUCT)
 		{ 0 },
 	};
 
@@ -96,6 +156,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 	}
 
 	close_opcode_db(db);
+
+	client_event_fds = fd_manager(1024);
+	if (!client_event_fds)
+		return SDL_APP_FAILURE;
 
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
 		SDL_Log("Couldn't initialize video/joystick: %s", SDL_GetError());
@@ -134,7 +198,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
-	for (int i = CLI_BEGIN; i < cli_end(); i++) {
+	for (
+		int i = fd_manager_first(client_event_fds);
+		-1 < i;
+		i = fd_manager_next(client_event_fds, i)
+	) {
 		write_input(i, event);
 	}
 
@@ -169,4 +237,5 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
+	fd_manager_free(client_event_fds);
 }

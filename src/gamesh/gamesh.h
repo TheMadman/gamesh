@@ -72,6 +72,18 @@ static inline unsigned char gamesh_to_byte(double value)
 	return (unsigned char)(value * 255);
 }
 
+/**
+ * \returns A file descriptor for events.
+ *
+ * The file descriptor is read-only.
+ */
+int gamesh_event_fd(void);
+
+/**
+ * \brief Closes the event file descriptor.
+ */
+void gamesh_event_fd_close(int fd);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
