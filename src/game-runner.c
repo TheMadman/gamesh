@@ -26,7 +26,8 @@ SDL_Texture *texture;
 	PROCESSOR(gamesh_input_mouse) \
 	PROCESSOR(gamesh_input_gamepad) \
 	PROCESSOR(gamesh_sprite) \
-	PROCESSOR(gamesh_collision) \
+	PROCESSOR(gamesh_collision_request) \
+	PROCESSOR(gamesh_collision_response) \
 	PROCESSOR(gamesh_event_fd_request) \
 	PROCESSOR(gamesh_event_fd_response)
 
@@ -146,6 +147,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 		MESSAGE_LIST(STRUCT)
 		{ 0 },
 	};
+
+#undef STRUCT
 
 	for (const struct message *message = messages; message->name; message++) {
 		*message->code = get_opcode(db, message->name);
