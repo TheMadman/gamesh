@@ -22,12 +22,10 @@ SDL_Texture *texture;
 
 #define MESSAGE_LIST(PROCESSOR) \
 	PROCESSOR(gamesh_exit) \
-	PROCESSOR(gamesh_input_keyboard) \
-	PROCESSOR(gamesh_input_mouse) \
-	PROCESSOR(gamesh_input_gamepad) \
-	PROCESSOR(gamesh_sprite) \
-	PROCESSOR(gamesh_collision_request) \
-	PROCESSOR(gamesh_collision_response) \
+	PROCESSOR(gamesh_sprite_request) \
+	PROCESSOR(gamesh_sprite_response) \
+	PROCESSOR(gamesh_collision_fd_request) \
+	PROCESSOR(gamesh_collision_fd_response) \
 	PROCESSOR(gamesh_event_fd_request) \
 	PROCESSOR(gamesh_event_fd_response)
 
@@ -36,6 +34,21 @@ MESSAGE_LIST(GLOBAL)
 #undef GLOBAL
 
 fd_manager_t *client_event_fds = NULL;
+
+// expects one cmsg header with file descriptors and nothing else
+static int get_fd(struct msghdr header)
+{
+	struct cmsghdr *chdr = CMSG_FIRSTHDR(&header);
+	if (!chdr)
+		return -1;
+
+	if (chdr->cmsg_level != SOL_SOCKET || chdr->cmsg_type != SCM_RIGHTS)
+		return -1;
+
+	int result = -1;
+	memcpy(&result, CMSG_DATA(chdr), sizeof(result));
+	return result;
+}
 
 static ssize_t send_fd(int receiver, int opcode, int data)
 {
@@ -64,32 +77,7 @@ static ssize_t send_fd(int receiver, int opcode, int data)
 
 ssize_t write_input(int fd, SDL_Event *event)
 {
-	switch (event->type) {
-		case SDL_EVENT_KEY_DOWN:
-		case SDL_EVENT_KEY_UP: {
-			struct gamesh_keyboard shevent = {
-				.timestamp = event->key.timestamp,
-				.code = event->key.scancode,
-				.key = event->key.key,
-				.pressed = event->type == SDL_EVENT_KEY_DOWN,
-			};
-			return writeop(
-				fd,
-				gamesh_input_keyboard,
-				&shevent,
-				sizeof(shevent)
-			);
-		}
-		case SDL_EVENT_QUIT:
-			return writeop(
-				fd,
-				gamesh_exit,
-				NULL,
-				0
-			);
-		default:
-			return -1;
-	}
+	return writeop(fd, event->type, event, sizeof(*event));
 }
 
 static void send_event_fd_response(int fd)
@@ -115,6 +103,16 @@ static void send_event_fd_response(int fd)
 	close(eventfds[0]);
 }
 
+static void send_sprite_response(
+	int fd,
+	void *buf,
+	int buflen,
+	struct msghdr header
+)
+{
+	// TODO
+}
+
 static void handle_client_messages(
 	int fd,
 	int opcode,
@@ -128,6 +126,8 @@ static void handle_client_messages(
 
 	if (opcode == gamesh_event_fd_request)
 		send_event_fd_response(fd);
+	else if (opcode == gamesh_sprite_request)
+		send_sprite_response(fd, buf, buflen, header);
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
@@ -203,7 +203,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
 	for (
 		int i = fd_manager_first(client_event_fds);
-		-1 < i;
+		i >= 0;
 		i = fd_manager_next(client_event_fds, i)
 	) {
 		write_input(i, event);

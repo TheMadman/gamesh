@@ -1,10 +1,7 @@
 gamesh_exit	0
-gamesh_input_keyboard	1
-gamesh_input_mouse	2
-gamesh_input_gamepad	3
-gamesh_sprite_request	4
-gamesh_sprite	5
-gamesh_collision_request	6
-gamesh_collision_response	7
-gamesh_event_fd_request	8
-gamesh_event_fd_response	9
+gamesh_sprite_request	1
+gamesh_sprite_response	2
+gamesh_event_fd_request	3
+gamesh_event_fd_response	4
+gamesh_collision_fd_request	5
+gamesh_collision_fd_response	6
