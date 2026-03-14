@@ -35,7 +35,7 @@ struct gamesh_keyboard {
 	 * \brief The tick number that this event was
 	 * 	generated on.
 	 */
-	long timestamp;
+	unsigned long timestamp;
 
 	/**
 	 * \brief Represents the physical keycode,

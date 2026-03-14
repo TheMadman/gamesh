@@ -63,32 +63,7 @@ static ssize_t send_fd(int receiver, int opcode, int data)
 
 ssize_t write_input(int fd, SDL_Event *event)
 {
-	switch (event->type) {
-		case SDL_EVENT_KEY_DOWN:
-		case SDL_EVENT_KEY_UP: {
-			struct gamesh_keyboard shevent = {
-				.timestamp = event->key.timestamp,
-				.code = event->key.scancode,
-				.key = event->key.key,
-				.pressed = event->type == SDL_EVENT_KEY_DOWN,
-			};
-			return writeop(
-				fd,
-				gamesh_input_keyboard,
-				&shevent,
-				sizeof(shevent)
-			);
-		}
-		case SDL_EVENT_QUIT:
-			return writeop(
-				fd,
-				gamesh_exit,
-				NULL,
-				0
-			);
-		default:
-			return -1;
-	}
+	return writeop(fd, (int)event->type, event, sizeof(*event));
 }
 
 static void send_event_fd_response(int fd)
@@ -101,17 +76,17 @@ static void send_event_fd_response(int fd)
 		return;
 	}
 
-	if (fd_manager_add(client_event_fds, eventfds[1]) < 0) {
+	if (fd_manager_add(client_event_fds, eventfds[0]) < 0) {
 		writeop(fd, gamesh_event_fd_response, NULL, 0);
 		return;
 	}
 
-	if (send_fd(fd, gamesh_event_fd_response, eventfds[0]) < 0) {
+	if (send_fd(fd, gamesh_event_fd_response, eventfds[1]) < 0) {
 		writeop(fd, gamesh_event_fd_response, NULL, 0);
 		return;
 	}
 
-	close(eventfds[0]);
+	close(eventfds[1]);
 }
 
 static void handle_client_messages(
@@ -127,6 +102,8 @@ static void handle_client_messages(
 
 	if (opcode == gamesh_event_fd_request)
 		send_event_fd_response(fd);
+
+	*result = SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
@@ -166,17 +143,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 		return SDL_APP_FAILURE;
 	}
 
-	if (
-		!SDL_CreateWindowAndRenderer(
-			"some-string",
-			DEFAULT_WIDTH,
-			DEFAULT_HEIGHT,
-			0,
-			&window,
-			&renderer
-		)
-	) {
-		SDL_Log("Couldn't create window/renderer: %s", SDL_GetError());
+	if (!(window = SDL_CreateWindow("some-string", DEFAULT_WIDTH, DEFAULT_HEIGHT, 0))) {
+		SDL_Log("Couldn't create window: %s", SDL_GetError());
+		return SDL_APP_FAILURE;
+	}
+
+	if (!SDL_CreateRenderer(window, NULL)) {
+		SDL_Log("Couldn't create renderer: %s", SDL_GetError());
 		return SDL_APP_FAILURE;
 	}
 
