@@ -113,7 +113,7 @@ int gamesh_event_fd(void)
 
 	int response_fd = -1;
 
-	struct pollfd result = pollopsrv(event_response, &response_fd, -1);
+	pollopsrv(event_response, &response_fd, -1);
 
 	return response_fd;
 }

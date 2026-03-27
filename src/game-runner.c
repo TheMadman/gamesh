@@ -18,7 +18,6 @@
 
 SDL_Window *window;
 SDL_Renderer *renderer;
-SDL_Texture *texture;
 
 #define MESSAGE_LIST(PROCESSOR) \
 	PROCESSOR(gamesh_exit) \
@@ -77,7 +76,7 @@ static ssize_t send_fd(int receiver, int opcode, int data)
 
 ssize_t write_input(int fd, SDL_Event *event)
 {
-	return writeop(fd, event->type, event, sizeof(*event));
+	return writeop(fd, (int)event->type, event, sizeof(*event));
 }
 
 static void send_event_fd_response(int fd)
@@ -90,17 +89,17 @@ static void send_event_fd_response(int fd)
 		return;
 	}
 
-	if (fd_manager_add(client_event_fds, eventfds[1]) < 0) {
+	if (fd_manager_add(client_event_fds, eventfds[0]) < 0) {
 		writeop(fd, gamesh_event_fd_response, NULL, 0);
 		return;
 	}
 
-	if (send_fd(fd, gamesh_event_fd_response, eventfds[0]) < 0) {
+	if (send_fd(fd, gamesh_event_fd_response, eventfds[1]) < 0) {
 		writeop(fd, gamesh_event_fd_response, NULL, 0);
 		return;
 	}
 
-	close(eventfds[0]);
+	close(eventfds[1]);
 }
 
 static void send_sprite_response(
@@ -128,6 +127,8 @@ static void handle_client_messages(
 		send_event_fd_response(fd);
 	else if (opcode == gamesh_sprite_request)
 		send_sprite_response(fd, buf, buflen, header);
+
+	*result = SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
@@ -169,30 +170,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 		return SDL_APP_FAILURE;
 	}
 
-	if (
-		!SDL_CreateWindowAndRenderer(
-			"some-string",
-			DEFAULT_WIDTH,
-			DEFAULT_HEIGHT,
-			0,
-			&window,
-			&renderer
-		)
-	) {
-		SDL_Log("Couldn't create window/renderer: %s", SDL_GetError());
+	if (!(window = SDL_CreateWindow("some-string", DEFAULT_WIDTH, DEFAULT_HEIGHT, 0))) {
+		SDL_Log("Couldn't create window: %s", SDL_GetError());
 		return SDL_APP_FAILURE;
 	}
 
-	texture = SDL_CreateTexture(
-		renderer,
-		SDL_PIXELFORMAT_RGB24,
-		SDL_TEXTUREACCESS_TARGET,
-		DEFAULT_WIDTH,
-		DEFAULT_HEIGHT
-	);
-
-	if (!texture) {
-		SDL_Log("Couldn't create texture: %s", SDL_GetError());
+	if (!(renderer = SDL_CreateRenderer(window, NULL))) {
+		SDL_Log("Couldn't create renderer: %s", SDL_GetError());
 		return SDL_APP_FAILURE;
 	}
 
@@ -217,6 +201,10 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
+	SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+	SDL_RenderClear(renderer);
+	SDL_RenderPresent(renderer);
+
 	SDL_AppResult result = { 0 };
 
 	struct pollfd last = { 0 };
@@ -227,11 +215,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 			0
 		);
 	} while (last.revents && !(last.revents & POLLIN));
-
-	SDL_SetRenderTarget(renderer, texture);
-	SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
-	SDL_RenderClear(renderer);
-	SDL_RenderPresent(renderer);
 
 	return result;
 }
