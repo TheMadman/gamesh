@@ -5,43 +5,25 @@
 
 #define ssizeof (ssize_t)sizeof
 
-// just an int buffer with a free list
-struct fd_manager {
-	int capacity;
-	int first;
-	int fds[];
-};
-
-ssize_t fd_manager_size(int capacity)
+fd_manager_t fd_manager_manage(int *fds, int capacity)
 {
-	if (capacity <= 0)
-		return -1;
-
-	const ssize_t array_bytes = ssizeof(int) * capacity;
-	return ssizeof(fd_manager_t) + array_bytes;
+	return (fd_manager_t) {
+		capacity,
+		-1,
+		fds,
+	};
 }
 
-void fd_manager_init(fd_manager_t *manager, int capacity)
+void fd_manager_init_buffer(int *fds, int capacity)
 {
-	manager->first = -1;
-	manager->capacity = capacity;
-	for (int i = 0; i < capacity; i++)
-		manager->fds[i] = -1;
+	for (int *end = &fds[capacity]; fds < end; fds++)
+		*fds = -1;
 }
 
-fd_manager_t *fd_manager(int capacity)
+fd_manager_t fd_manager(int *fds, int capacity)
 {
-	const ssize_t size = fd_manager_size(capacity);
-	if (size < 0)
-		return NULL;
-
-	fd_manager_t *const result = malloc((size_t)size);
-	if (!result)
-		return NULL;
-
-	fd_manager_init(result, capacity);
-
-	return result;
+	fd_manager_init_buffer(fds, capacity);
+	return fd_manager_manage(fds, capacity);
 }
 
 static bool error(fd_manager_t *manager, int fd)
@@ -89,7 +71,3 @@ void fd_manager_remove(fd_manager_t *manager, int fd)
 	manager->fds[fd] = -1;
 }
 
-void fd_manager_free(fd_manager_t *manager)
-{
-	free(manager);
-}

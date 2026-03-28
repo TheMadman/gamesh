@@ -34,52 +34,47 @@ extern "C" {
 /**
  * \brief The type representing a file descriptor manager object.
  */
-typedef struct fd_manager fd_manager_t;
+typedef struct fd_manager {
+	int capacity;
+	int first;
+	int *fds;
+} fd_manager_t;
 
 /**
- * \brief Calculates the size, in bytes, for an appropriate buffer to
- * 	initialize an fd manager.
+ * \brief Creates a new file descriptor manager from the given buffer, resetting
+ * 	the buffer for a brand new manager.
  *
- * \param capacity The number of file descriptors to store.
- * \returns The size, in bytes, necessary for the store, or <0 on error.
+ * \param fd_buffer An array capable of holding file descriptors.
+ * \param fd_capacity The amount of file descriptors the fd_buffer can hold.
+ *
+ * \returns A manager for the buffer.
  */
-ssize_t fd_manager_size(int capacity);
+fd_manager_t fd_manager(int *fd_buffer, int fd_capacity);
 
 /**
- * \brief Initializes the given memory buffer for a manager of the
- * 	given capacity.
+ * \brief Attaches a manager to an existing buffer without reinitializing
+ * 	the buffer's values.
+ * 
+ * \param fd_buffer An array capable of holding file descriptors.
+ * \param fd_capacity The amount of file descriptors the fd_buffer can hold.
  *
- * For most applications, consider using fd_manager(), which will
- * automatically allocate the correct amount of memory.
- *
- * It is a memory error to allocate less memory than fd_manager_size()
- * reports for the given capacity.
- *
- * \param manager A pointer to the memory to initialize.
- * \param capacity The number of file descriptors to store.
- *
- * \sa fd_manager()
+ * \returns A manager for the buffer.
  */
-void fd_manager_init(fd_manager_t *manager, int capacity);
+fd_manager_t fd_manager_manage(int *fd_buffer, int fd_capacity);
 
 /**
- * \brief Allocates an fd_manager_t for the given capacity.
+ * \brief Sets all the file descriptors in the buffer to -1, ready
+ * 	to be used by a manager.
  *
- * Must be freed with fd_manager_free().
- *
- * \param capacity The number of file descriptors to store.
- * \returns A valid pointer on success or NULL on failure.
- *
- * \sa fd_manager_free()
+ * \param fd_buffer The buffer to initialize.
+ * \param fd_capacity The number of file descriptors the fd_buffer can hold.
  */
-fd_manager_t *fd_manager(int capacity);
-
+void fd_manager_init_buffer(int *fd_buffer, int fd_capacity);
 
 int fd_manager_add(fd_manager_t *manager, int fd);
 int fd_manager_first(fd_manager_t *manager);
 int fd_manager_next(fd_manager_t *manager, int fd);
 void fd_manager_remove(fd_manager_t *manager, int fd);
-void fd_manager_free(fd_manager_t *manager);
 
 #ifdef __cplusplus
 } // extern "C"

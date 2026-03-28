@@ -20,56 +20,39 @@
 #include <assert.h>
 #include <stdbool.h>
 
-void test_fd_manager(void)
-{
-	{
-		fd_manager_t *manager = fd_manager(1024);
-		assert(manager);
-
-		fd_manager_free(manager);
-	}
-	{
-		fd_manager_t *manager = fd_manager(-1);
-		assert(!manager);
-	}
-}
-
 void test_fd_manager_operations(void)
 {
-	fd_manager_t *manager = fd_manager(1024);
-	assert(manager);
+	int fds[1024] = { 0 };
+	fd_manager_t manager = fd_manager(fds, 1024);
 
-	assert(fd_manager_first(manager) == -1);
+	assert(fd_manager_first(&manager) == -1);
 
-	fd_manager_add(manager, 0);
-	assert(fd_manager_first(manager) == 0);
-	assert(fd_manager_next(manager, 0) == -1);
+	fd_manager_add(&manager, 0);
+	assert(fd_manager_first(&manager) == 0);
+	assert(fd_manager_next(&manager, 0) == -1);
 
-	fd_manager_add(manager, 4);
-	assert(fd_manager_first(manager) == 4);
-	assert(fd_manager_next(manager, 4) == 0);
+	fd_manager_add(&manager, 4);
+	assert(fd_manager_first(&manager) == 4);
+	assert(fd_manager_next(&manager, 4) == 0);
 
-	fd_manager_add(manager, 12);
-	assert(fd_manager_first(manager) == 12);
-	assert(fd_manager_next(manager, 12) == 4);
+	fd_manager_add(&manager, 12);
+	assert(fd_manager_first(&manager) == 12);
+	assert(fd_manager_next(&manager, 12) == 4);
 
-	fd_manager_remove(manager, 4);
-	assert(fd_manager_first(manager) == 12);
-	assert(fd_manager_next(manager, 12) == 0);
-	assert(fd_manager_next(manager, 0) == -1);
+	fd_manager_remove(&manager, 4);
+	assert(fd_manager_first(&manager) == 12);
+	assert(fd_manager_next(&manager, 12) == 0);
+	assert(fd_manager_next(&manager, 0) == -1);
 
-	fd_manager_remove(manager, 0);
-	assert(fd_manager_first(manager) == 12);
-	assert(fd_manager_next(manager, 12) == -1);
+	fd_manager_remove(&manager, 0);
+	assert(fd_manager_first(&manager) == 12);
+	assert(fd_manager_next(&manager, 12) == -1);
 
-	fd_manager_remove(manager, 12);
-	assert(fd_manager_first(manager) == -1);
-
-	fd_manager_free(manager);
+	fd_manager_remove(&manager, 12);
+	assert(fd_manager_first(&manager) == -1);
 }
 
 int main()
 {
-	test_fd_manager();
 	test_fd_manager_operations();
 }

@@ -16,6 +16,8 @@
 #define DEFAULT_HEIGHT 720
 #define DEFAULT_WIDTH 1280
 
+#define ARRLENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
+
 SDL_Window *window;
 SDL_Renderer *renderer;
 
@@ -32,7 +34,8 @@ SDL_Renderer *renderer;
 MESSAGE_LIST(GLOBAL)
 #undef GLOBAL
 
-fd_manager_t *client_event_fds = NULL;
+int fd_buffer[1024] = { 0 };
+fd_manager_t client_event_fd_manager = { 0 };
 
 // expects one cmsg header with file descriptors and nothing else
 static int get_fd(struct msghdr header)
@@ -89,7 +92,7 @@ static void send_event_fd_response(int fd)
 		return;
 	}
 
-	if (fd_manager_add(client_event_fds, eventfds[0]) < 0) {
+	if (fd_manager_add(&client_event_fd_manager, eventfds[0]) < 0) {
 		writeop(fd, gamesh_event_fd_response, NULL, 0);
 		return;
 	}
@@ -161,9 +164,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 
 	close_opcode_db(db);
 
-	client_event_fds = fd_manager(1024);
-	if (!client_event_fds)
-		return SDL_APP_FAILURE;
+	client_event_fd_manager = fd_manager(fd_buffer, ARRLENGTH(fd_buffer));
 
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
 		SDL_Log("Couldn't initialize video/joystick: %s", SDL_GetError());
@@ -186,9 +187,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
 	for (
-		int i = fd_manager_first(client_event_fds);
+		int i = fd_manager_first(&client_event_fd_manager);
 		i >= 0;
-		i = fd_manager_next(client_event_fds, i)
+		i = fd_manager_next(&client_event_fd_manager, i)
 	) {
 		write_input(i, event);
 	}
@@ -223,5 +224,4 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
-	fd_manager_free(client_event_fds);
 }
