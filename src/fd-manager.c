@@ -1,7 +1,6 @@
 #include "gamesh/fd-manager.h"
 
 #include <stdbool.h>
-#include <stdlib.h>
 
 #define ssizeof (ssize_t)sizeof
 

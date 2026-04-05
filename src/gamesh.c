@@ -7,12 +7,19 @@
 #include <srvsh.h>
 
 #define MESSAGE_LIST(OPERATION) \
-	OPERATION(gamesh_event_fd_request) \
-	OPERATION(gamesh_event_fd_response) \
 	OPERATION(gamesh_collision_fd_request) \
 	OPERATION(gamesh_collision_fd_response) \
 	OPERATION(gamesh_sprite_request) \
-	OPERATION(gamesh_sprite_response)
+	OPERATION(gamesh_sprite_response) \
+	OPERATION(gamesh_event_fd_request) \
+	OPERATION(gamesh_event_fd_response) \
+	OPERATION(gamesh_event_listen_request) \
+	OPERATION(gamesh_event_listen_response) \
+	OPERATION(gamesh_event_emit_request) \
+	OPERATION(gamesh_event_emit_response) \
+	OPERATION(gamesh_event_new_listener_event)
+
+
 
 #define DECLARE_INT(MESSAGE) int MESSAGE = -1;
 MESSAGE_LIST(DECLARE_INT)
@@ -78,7 +85,7 @@ static int init_opcodes(void)
 	return 0;
 }
 
-static void event_response(
+static void event_fd_response(
 	int fd,
 	int opcode,
 	void *buffer,
@@ -113,7 +120,7 @@ int gamesh_event_fd(void)
 
 	int response_fd = -1;
 
-	pollopsrv(event_response, &response_fd, -1);
+	pollopsrv(event_fd_response, &response_fd, -1);
 
 	return response_fd;
 }
@@ -123,57 +130,32 @@ void gamesh_event_fd_close(int fd)
 	close(fd);
 }
 
-static void sprite_id_response(
+void event_listen_response(
 	int fd,
 	int opcode,
 	void *data,
-	int length,
+	int size,
 	struct msghdr header,
 	void *context
 )
 {
-	gamesh_sprite_id_t *sprite_id = context;
-
-	if (length != sizeof(gamesh_sprite_id_t))
-		return;
-
-	memcpy(sprite_id, data, sizeof(sprite_id));
+	*(int*)context = opcode == gamesh_event_listen_response;
 }
 
-gamesh_sprite_id_t gamesh_texture(
-	int fd,
-	size_t height,
-	size_t width,
-	unsigned bit_depth
-)
+int gamesh_event_listen(int opcode)
 {
+	// I don't like doing this in every single function but
+	// I can't figure out something better yet
 	if (init_opcodes() == -1)
 		return -1;
 
-	struct gamesh_sprite texture = {
-		.height = height,
-		.width = width,
-		.bit_depth = bit_depth,
-	};
-
-	ssize_t request_result = send_fd(
-		SRV_FILENO,
-		gamesh_sprite_request,
-		&texture,
-		sizeof(texture),
-		fd
-	);
-
-	if (request_result < 0)
+	ssize_t written = writesrv(gamesh_event_listen_request, &opcode, sizeof(opcode));
+	if (written < 0)
 		return -1;
 
-	gamesh_sprite_id_t result = -1;
+	int result = -1;
 
-	struct pollfd response_result = pollopsrv(
-		sprite_id_response,
-		&result,
-		-1
-	);
+	pollopsrv(event_listen_response, &result, -1);
 
 	return result;
 }

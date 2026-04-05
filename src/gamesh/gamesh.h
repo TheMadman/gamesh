@@ -113,24 +113,15 @@ int gamesh_event_fd(void);
 void gamesh_event_fd_close(int fd);
 
 /**
- * \brief Creates a sprite buffer that is shared
- * 	with the server.
+ * \brief Requests to start receiving events with the
+ * 	given opcode on this client's open event_fds,
+ * 	opened with gamesh_event_fd().
  *
- * \param fd The file descriptor of the sprite. This
- * 	can be shared memory or a file.
- * \param height The height of the sprite in pixels.
- * \param width The width of the sprite in pixels.
- * \param bit_depth The bit depth of a single pixel.
+ * \param opcode The opcode to register interest in.
  *
- * \returns A unique ID for the sprite on success, or
- * 	-1 on failure.
+ * \returns 0 on success, -1 on error.
  */
-gamesh_sprite_id_t gamesh_sprite(
-	int fd,
-	size_t height,
-	size_t width,
-	unsigned bit_depth
-);
+int gamesh_event_listen(int opcode);
 
 #ifdef __cplusplus
 } // extern "C"
