@@ -13,7 +13,7 @@ target_include_directories(game-runner
 	$<INSTALL_INTERFACE:include>)
 
 target_link_libraries(gamesh srvsh)
-target_link_libraries(game-runner SDL3::SDL3 srvsh)
+target_link_libraries(game-runner SDL3::SDL3 srvsh adt)
 
 install(TARGETS gamesh
 	DESTINATION lib)

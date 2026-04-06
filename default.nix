@@ -1,10 +1,11 @@
 let
 	pkgs = import <nixpkgs> {};
-	libadt = import (pkgs.fetchFromGitHub {
+	libadt = import (
+	pkgs.fetchFromGitHub {
 		owner = "TheMadman";
 		repo = "libadt";
-		rev = "b8e1fea53d4a3a120254b97f1331123a6fd5fcc9";
-		hash = "sha256-cAhYJ8CU9vtgzMnO0CJUyno2v4YN3m/YURtA1pgDL2s=";
+		rev = "6be08777cb39a84e81b74ce1591a74558ae9c630";
+		hash = "sha256-+rcZ5+IbsWjD9AjWxEMM3PWLWonPnc25hbk4UPHOtlU=";
 	});
 	srvsh = import (pkgs.fetchFromGitHub {
 		owner = "TheMadman";
