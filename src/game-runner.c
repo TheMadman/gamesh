@@ -338,14 +338,18 @@ void handle_client_messages(
 		send_event_fd_response(fd);
 		return;
 	} else if (opcode == gamesh_event_listen_request) {
-		if (size != sizeof(int))
+		if (size != sizeof(int)) {
+			writeop(fd, -1, NULL, 0);
 			return;
+		}
 
 		add_client_listener_for_opcode(fd, *(int*)data);
 		return;
 	} else if (opcode == gamesh_event_emit_request) {
-		if (size != sizeof(int))
+		if (size != sizeof(int)) {
+			writeop(fd, -1, NULL, 0);
 			return;
+		}
 
 		add_client_emitter_for_opcode(fd, *(int*)data);
 		return;
