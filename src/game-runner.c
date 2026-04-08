@@ -206,19 +206,71 @@ static entry_t *insert_other(entry_t *_, void *context)
 	return libadt_vector_index(*find->vec, find->vec->length - 1);
 }
 
+static entry_t *send_event_fds_to(entry_t *listeners, void *context)
+{
+	int *emitter_fd = context;
+	fd_manager_t *const manager = &listeners->fd_manager;
+	for (
+		int listener_fd = fd_manager_first(manager);
+		-1 < listener_fd;
+		listener_fd = fd_manager_next(manager, listener_fd)
+	) {
+		int listener_event_fd = find_event_socket(
+			client_event_fds,
+			listener_fd
+		);
+		if (listener_event_fd < 0)
+			continue;
+
+		send_fd(
+			*emitter_fd,
+			gamesh_event_new_listener_event,
+			listener_event_fd
+		);
+	}
+	return listeners;
+}
+
 static entry_t *send_event_fds_to_each(entry_t *emitters, void *context)
 {
-	int *event_fd = context;
-	fd_manager_t *manager = &emitters->fd_manager;
-	int emitter_fd = fd_manager_first(manager);
-	for (; -1 < emitter_fd; emitter_fd = fd_manager_next(manager, emitter_fd)) {
-		int emitter_event_fd = find_event_socket(client_event_fds, emitter_fd);
+	int *listener_event_fd = context;
+	fd_manager_t *const manager = &emitters->fd_manager;
+	for (
+		int emitter_fd = fd_manager_first(manager);
+		-1 < emitter_fd;
+		emitter_fd = fd_manager_next(manager, emitter_fd)
+	) {
+		int emitter_event_fd = find_event_socket(
+			client_event_fds,
+			emitter_fd
+		);
 		if (emitter_event_fd < 0)
 			continue;
 
-		send_fd(emitter_event_fd, gamesh_event_new_listener_event, *event_fd);
+		send_fd(
+			emitter_event_fd,
+			gamesh_event_new_listener_event,
+			*listener_event_fd
+		);
 	}
 	return emitters;
+}
+
+static entry_t *add_client_fd(entry_t *entry, void *context)
+{
+	int *client_fd = context;
+	fd_manager_t *const fd_manager = &entry->fd_manager;
+	for (
+		int c = fd_manager_first(fd_manager);
+		-1 < c;
+		c = fd_manager_next(fd_manager, c)
+	) {
+		if (c == *client_fd)
+			return entry;
+	}
+	if (fd_manager_add(&entry->fd_manager, *client_fd) < 0)
+		return NULL;
+	return entry;
 }
 
 bool add_client_listener_for_opcode(int client_fd, int opcode)
@@ -233,14 +285,41 @@ bool add_client_listener_for_opcode(int client_fd, int opcode)
 	};
 	entry_t *entry = find_entry(opcode_listener_fds, opcode);
 	entry = or(entry, insert_other, &other);
+	entry = then(entry, add_client_fd, &client_fd);
 	find_entry_t find_emitters = {
-		.vec = &opcode_listener_fds,
+		.vec = &opcode_emitter_fds,
 		.id = opcode,
 	};
 	entry = then(entry, find_entry_wrapper, &find_emitters);
 	entry = then(entry, send_event_fds_to_each, &event_fd);
 
 	int opcode_to_send = entry ? gamesh_event_listen_response : -1;
+	writeop(client_fd, opcode_to_send, NULL, 0);
+
+	return !!entry;
+}
+
+bool add_client_emitter_for_opcode(int client_fd, int opcode)
+{
+	int event_fd = find_event_socket(client_event_fds, client_fd);
+	if (event_fd < 0)
+		return false;
+
+	find_entry_t other = {
+		.vec = &opcode_emitter_fds,
+		.id = opcode,
+	};
+	entry_t *entry = find_entry(opcode_emitter_fds, opcode);
+	entry = or(entry, insert_other, &other);
+	entry = then(entry, add_client_fd, &client_fd);
+	find_entry_t find_listeners = {
+		.vec = &opcode_listener_fds,
+		.id = opcode,
+	};
+	entry = then(entry, find_entry_wrapper, &find_listeners);
+	entry = then(entry, send_event_fds_to, &event_fd);
+
+	int opcode_to_send = entry? gamesh_event_emit_response : -1;
 	writeop(client_fd, opcode_to_send, NULL, 0);
 
 	return !!entry;
@@ -263,6 +342,12 @@ void handle_client_messages(
 			return;
 
 		add_client_listener_for_opcode(fd, *(int*)data);
+		return;
+	} else if (opcode == gamesh_event_emit_request) {
+		if (size != sizeof(int))
+			return;
+
+		add_client_emitter_for_opcode(fd, *(int*)data);
 		return;
 	}
 }
