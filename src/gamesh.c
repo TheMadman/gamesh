@@ -160,3 +160,31 @@ int gamesh_event_listen(int opcode)
 	return result;
 }
 
+void event_emit_response(
+	int fd,
+	int opcode,
+	void *data,
+	int size,
+	struct msghdr header,
+	void *context
+)
+{
+	*(int*)context = opcode == gamesh_event_emit_response;
+}
+
+int gamesh_event_emit(int opcode)
+{
+	if (init_opcodes() == -1)
+		return -1;
+
+	ssize_t written = writesrv(gamesh_event_emit_request, &opcode, sizeof(opcode));
+	if (written < 0)
+		return -1;
+
+	int result = -1;
+
+	pollopsrv(event_emit_response, &result, -1);
+
+	return result;
+}
+

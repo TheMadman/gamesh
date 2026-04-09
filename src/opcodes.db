@@ -1,7 +1,10 @@
-gamesh_exit	0
-gamesh_sprite_request	1
-gamesh_sprite_response	2
-gamesh_event_fd_request	3
-gamesh_event_fd_response	4
-gamesh_collision_fd_request	5
-gamesh_collision_fd_response	6
+# default opcodes for the game runner
+
+gamesh_exit
+gamesh_event_fd_request
+gamesh_event_fd_response
+gamesh_event_listen_request
+gamesh_event_listen_response
+gamesh_event_emit_request
+gamesh_event_emit_response
+gamesh_event_new_listener_event

@@ -123,6 +123,19 @@ void gamesh_event_fd_close(int fd);
  */
 int gamesh_event_listen(int opcode);
 
+/**
+ * \brief Requests to start receiving event listeners
+ * 	with the given opcode on this client's open event_fds,
+ * 	opened with gamesh_event_fd().
+ *
+ * Use this function to declare that this application will
+ * emit this event. All listener event fds will be sent to
+ * this application via its event_fd.
+ *
+ * \returns 0 on success, -1 on error.
+ */
+int gamesh_event_emit(int opcode);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
