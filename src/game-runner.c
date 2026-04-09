@@ -273,7 +273,7 @@ static entry_t *add_client_fd(entry_t *entry, void *context)
 	return entry;
 }
 
-bool add_client_listener_for_opcode(int client_fd, int opcode)
+static bool add_client_listener_for_opcode(int client_fd, int opcode)
 {
 	int event_fd = find_event_socket(client_event_fds, client_fd);
 	if (event_fd < 0)
@@ -299,7 +299,7 @@ bool add_client_listener_for_opcode(int client_fd, int opcode)
 	return !!entry;
 }
 
-bool add_client_emitter_for_opcode(int client_fd, int opcode)
+static bool add_client_emitter_for_opcode(int client_fd, int opcode)
 {
 	int event_fd = find_event_socket(client_event_fds, client_fd);
 	if (event_fd < 0)
@@ -325,7 +325,7 @@ bool add_client_emitter_for_opcode(int client_fd, int opcode)
 	return !!entry;
 }
 
-void handle_client_messages(
+static void handle_client_messages(
 	int fd,
 	int opcode,
 	void *data,

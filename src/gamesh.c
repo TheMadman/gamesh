@@ -7,10 +7,6 @@
 #include <srvsh.h>
 
 #define MESSAGE_LIST(OPERATION) \
-	OPERATION(gamesh_collision_fd_request) \
-	OPERATION(gamesh_collision_fd_response) \
-	OPERATION(gamesh_sprite_request) \
-	OPERATION(gamesh_sprite_response) \
 	OPERATION(gamesh_event_fd_request) \
 	OPERATION(gamesh_event_fd_response) \
 	OPERATION(gamesh_event_listen_request) \
