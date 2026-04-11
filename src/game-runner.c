@@ -62,7 +62,7 @@ static void *vec_find(
 	for (unsigned i = 0; i < vector.length; i++) {
 		void *c = libadt_vector_index(vector, i);
 		if (!comp(c, element))
-			break;
+			return c;
 	}
 	return NULL;
 }
