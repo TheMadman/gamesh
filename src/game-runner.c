@@ -291,10 +291,11 @@ static bool add_client_listener_for_opcode(int client_fd, int opcode)
 		.id = opcode,
 	};
 	entry = then(entry, find_entry_wrapper, &find_emitters);
-	entry = then(entry, send_event_fds_to_each, &event_fd);
 
 	int opcode_to_send = entry ? gamesh_event_listen_response : -1;
 	writeop(client_fd, opcode_to_send, NULL, 0);
+
+	entry = then(entry, send_event_fds_to_each, &event_fd);
 
 	return !!entry;
 }
@@ -317,10 +318,11 @@ static bool add_client_emitter_for_opcode(int client_fd, int opcode)
 		.id = opcode,
 	};
 	entry = then(entry, find_entry_wrapper, &find_listeners);
-	entry = then(entry, send_event_fds_to, &event_fd);
 
 	int opcode_to_send = entry? gamesh_event_emit_response : -1;
 	writeop(client_fd, opcode_to_send, NULL, 0);
+
+	entry = then(entry, send_event_fds_to, &event_fd);
 
 	return !!entry;
 }
