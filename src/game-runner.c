@@ -4,8 +4,6 @@
 #include <libadt.h>
 #include <unistd.h>
 
-#include "gamesh/fd-manager.h"
-
 #define ARRAY_SIZE libadt_util_arrlength
 #define ARRAY_END libadt_util_arrend
 
@@ -36,11 +34,9 @@ static const message_t messages[] = {
 	MESSAGE_LIST(CREATE_MESSAGE_STRUCT)
 };
 
-int fd_buffer[1024] = { 0 };
-
 typedef struct {
 	int id;
-	fd_manager_t fd_manager;
+	vec_t fds;
 } entry_t;
 
 typedef struct {
@@ -197,7 +193,7 @@ static entry_t *insert_other(entry_t *_, void *context)
 	find_entry_t *find = context;
 	entry_t new_entry = {
 		.id = find->id,
-		.fd_manager = fd_manager_manage(fd_buffer, ARRAY_SIZE(fd_buffer)),
+		.fds = { .size = sizeof(int), },
 	};
 	vec_t attempt = libadt_vector_append(*find->vec, &new_entry);
 	if (libadt_vector_identity(*find->vec, attempt))
@@ -209,15 +205,11 @@ static entry_t *insert_other(entry_t *_, void *context)
 static entry_t *send_event_fds_to(entry_t *listeners, void *context)
 {
 	int *emitter_fd = context;
-	fd_manager_t *const manager = &listeners->fd_manager;
-	for (
-		int listener_fd = fd_manager_first(manager);
-		-1 < listener_fd;
-		listener_fd = fd_manager_next(manager, listener_fd)
-	) {
+	for (size_t i = 0; i < listeners->fds.length; i++) {
+		int *listener_fd = libadt_vector_index(listeners->fds, i);
 		int listener_event_fd = find_event_socket(
 			client_event_fds,
-			listener_fd
+			*listener_fd
 		);
 		if (listener_event_fd < 0)
 			continue;
@@ -225,7 +217,7 @@ static entry_t *send_event_fds_to(entry_t *listeners, void *context)
 		send_fd(
 			*emitter_fd,
 			gamesh_event_new_listener_event,
-			listener_event_fd
+			*listener_fd
 		);
 	}
 	return listeners;
@@ -234,15 +226,11 @@ static entry_t *send_event_fds_to(entry_t *listeners, void *context)
 static entry_t *send_event_fds_to_each(entry_t *emitters, void *context)
 {
 	int *listener_event_fd = context;
-	fd_manager_t *const manager = &emitters->fd_manager;
-	for (
-		int emitter_fd = fd_manager_first(manager);
-		-1 < emitter_fd;
-		emitter_fd = fd_manager_next(manager, emitter_fd)
-	) {
+	for (size_t i = 0; i < emitters->fds.length; i++) {
+		int *emitter_fd = libadt_vector_index(emitters->fds, i);
 		int emitter_event_fd = find_event_socket(
 			client_event_fds,
-			emitter_fd
+			*emitter_fd
 		);
 		if (emitter_event_fd < 0)
 			continue;
@@ -259,17 +247,13 @@ static entry_t *send_event_fds_to_each(entry_t *emitters, void *context)
 static entry_t *add_client_fd(entry_t *entry, void *context)
 {
 	int *client_fd = context;
-	fd_manager_t *const fd_manager = &entry->fd_manager;
-	for (
-		int c = fd_manager_first(fd_manager);
-		-1 < c;
-		c = fd_manager_next(fd_manager, c)
-	) {
-		if (c == *client_fd)
-			return entry;
-	}
-	if (fd_manager_add(&entry->fd_manager, *client_fd) < 0)
+	int *existing = vec_find(entry->fds, client_fd, comp_ints);
+	if (existing)
+		return entry;
+	vec_t attempt = libadt_vector_append(entry->fds, client_fd);
+	if (libadt_vector_identity(attempt, entry->fds))
 		return NULL;
+	entry->fds = attempt;
 	return entry;
 }
 
@@ -371,8 +355,6 @@ int main()
 	}
 
 	close_opcode_db(db);
-
-	fd_manager_init_buffer(fd_buffer, ARRAY_SIZE(fd_buffer));
 
 	int number_clients = cli_count();
 
