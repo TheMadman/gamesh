@@ -3,14 +3,16 @@
 #include <SDL3/SDL_main.h>
 
 #include <srvsh.h>
+#include <libadt.h>
 
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <errno.h>
+#include <assert.h>
 
 #include "gamesh/gamesh.h"
-#include "gamesh/fd-manager.h"
+
+typedef struct libadt_vector vec_t;
 
 #define DEFAULT_HEIGHT 720
 #define DEFAULT_WIDTH 1280
@@ -20,21 +22,44 @@
 SDL_Window *window;
 SDL_Renderer *renderer;
 
-#define MESSAGE_LIST(PROCESSOR) \
-	PROCESSOR(gamesh_exit) \
-	PROCESSOR(gamesh_sprite_request) \
-	PROCESSOR(gamesh_sprite_response) \
-	PROCESSOR(gamesh_collision_fd_request) \
-	PROCESSOR(gamesh_collision_fd_response) \
-	PROCESSOR(gamesh_event_fd_request) \
-	PROCESSOR(gamesh_event_fd_response)
+int event_fd = -1;
+int gamesh_new_event_listener_event = -1;
 
-#define GLOBAL(MESSAGE) int MESSAGE;
-MESSAGE_LIST(GLOBAL)
-#undef GLOBAL
+vec_t keyboard_event_listeners = { .size = sizeof(int) };
+vec_t mouse_event_listeners = { .size = sizeof(int) };
+vec_t gamepad_event_listeners = { .size = sizeof(int) };
 
-int fd_buffer[1024] = { 0 };
-fd_manager_t client_event_fd_manager = { 0 };
+#define LISTEN_EVENTS(OPERATION) \
+	OPERATION(gamesh_sdl_texture_event) \
+	OPERATION(gamesh_sdl_texture_buffer_add_event) \
+	OPERATION(gamesh_sdl_texture_buffer_swap_event)
+
+#define EMIT_EVENTS(OPERATION) \
+	OPERATION(gamesh_sdl_quit_event) \
+	OPERATION(gamesh_sdl_keyboard_event) \
+	OPERATION(gamesh_sdl_mouse_event) \
+	OPERATION(gamesh_sdl_gamepad_event)
+
+#define CREATE_GLOBAL(MESSAGE_TYPE) int MESSAGE_TYPE = -1;
+LISTEN_EVENTS(CREATE_GLOBAL)
+EMIT_EVENTS(CREATE_GLOBAL)
+
+typedef struct {
+	int *destination;
+	const char *name;
+} message_opcode;
+
+#define CREATE_STRUCT(MESSAGE_TYPE) { &MESSAGE_TYPE, #MESSAGE_TYPE },
+
+// I should probably add some inline functions like this in libadt..
+static int append(vec_t *vec, void *data)
+{
+	vec_t attempt = libadt_vector_append(*vec, data);
+	if (libadt_vector_identity(attempt, *vec))
+		return -1;
+	*vec = attempt;
+	return 0;
+}
 
 // expects one cmsg header with file descriptors and nothing else
 static int get_fd(struct msghdr header)
@@ -51,119 +76,63 @@ static int get_fd(struct msghdr header)
 	return result;
 }
 
-static ssize_t send_fd(int receiver, int opcode, int data)
-{
-	union {
-		struct cmsghdr header;
-		char buf[CMSG_SPACE(sizeof(data))];
-	} cmsg = {
-		.header = {
-			.cmsg_level = SOL_SOCKET,
-			.cmsg_type = SCM_RIGHTS,
-			.cmsg_len = CMSG_LEN(sizeof(data)),
-		},
-	};
-
-	memcpy(CMSG_DATA(&cmsg.header), &data, sizeof(data));
-
-	return sendmsgop(
-		receiver,
-		opcode,
-		NULL,
-		0,
-		&cmsg.header,
-		sizeof(cmsg)
-	);
-}
-
-ssize_t write_input(int fd, SDL_Event *event)
-{
-	return writeop(fd, (int)event->type, event, sizeof(*event));
-}
-
-static void send_event_fd_response(int fd)
-{
-	int eventfds[2] = { 0 };
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, eventfds) < 0) {
-		// sending a response with no file descriptors to indicate
-		// an error
-		writeop(fd, gamesh_event_fd_response, NULL, 0);
-		return;
-	}
-
-	if (fd_manager_add(&client_event_fd_manager, eventfds[0]) < 0) {
-		writeop(fd, gamesh_event_fd_response, NULL, 0);
-		return;
-	}
-
-	if (send_fd(fd, gamesh_event_fd_response, eventfds[1]) < 0) {
-		writeop(fd, gamesh_event_fd_response, NULL, 0);
-		return;
-	}
-
-	close(eventfds[1]);
-}
-
-static void send_sprite_response(
-	int fd,
-	void *buf,
-	int buflen,
-	struct msghdr header
-)
-{
-	// TODO
-}
-
-static void handle_client_messages(
-	int fd,
-	int opcode,
-	void *buf,
-	int buflen,
-	struct msghdr header,
-	void *context
-)
-{
-	SDL_AppResult *result = context;
-
-	if (opcode == gamesh_event_fd_request)
-		send_event_fd_response(fd);
-	else if (opcode == gamesh_sprite_request)
-		send_sprite_response(fd, buf, buflen, header);
-
-	*result = SDL_APP_CONTINUE;
-}
-
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 {
+	event_fd = gamesh_event_fd();
+	if (event_fd < 0) {
+		fprintf(stderr, "Failed to open event_fd\n");
+		return SDL_APP_FAILURE;
+	}
+
 	opcode_db *db = open_opcode_db();
 	if (!db) {
 		fprintf(stderr, "Failed to open opcodedb\n");
 		return SDL_APP_FAILURE;
 	}
 
-#define STRUCT(MESSAGE) { #MESSAGE, &MESSAGE },
-
-	static const struct message {
-		const char *name;
-		int *code;
-	} messages[] = {
-		MESSAGE_LIST(STRUCT)
+	static const message_opcode emit_opcodes[] = {
+		EMIT_EVENTS(CREATE_STRUCT)
 		{ 0 },
 	};
 
-#undef STRUCT
+	for (const message_opcode *c = emit_opcodes; c->destination; c++) {
+		*c->destination = get_opcode(db, c->name);
+		if (*c->destination < 0) {
+			fprintf(stderr, "Failed to load opcode %s\n", c->name);
+			return SDL_APP_FAILURE;
+		}
 
-	for (const struct message *message = messages; message->name; message++) {
-		*message->code = get_opcode(db, message->name);
-		if (*message->code < 0) {
-			fprintf(stderr, "Failed to get opcode for message %s\n", message->name);
+		if (gamesh_event_emit(*c->destination) < 0) {
+			fprintf(stderr, "Failed to register emit event %s\n", c->name);
 			return SDL_APP_FAILURE;
 		}
 	}
 
-	close_opcode_db(db);
+	static const message_opcode listen_opcodes[] = {
+		LISTEN_EVENTS(CREATE_STRUCT)
+		{ 0 },
+	};
 
-	client_event_fd_manager = fd_manager(fd_buffer, ARRLENGTH(fd_buffer));
+	for (const message_opcode *c = listen_opcodes; c->destination; c++) {
+		*c->destination = get_opcode(db, c->name);
+		if (*c->destination < 0) {
+			fprintf(stderr, "Failed to load opcode %s\n", c->name);
+			return SDL_APP_FAILURE;
+		}
+
+		if (gamesh_event_listen(*c->destination) < 0) {
+			fprintf(stderr, "Failed to register listen event %s\n", c->name);
+			return SDL_APP_FAILURE;
+		}
+	}
+
+	gamesh_new_event_listener_event = get_opcode(db, "gamesh_new_event_listener_event");
+	if (gamesh_new_event_listener_event < 0) {
+		fprintf(stderr, "Failed to load opcode gamesh_new_event_listener_event\n");
+		return SDL_APP_FAILURE;
+	}
+
+	close_opcode_db(db);
 
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
 		SDL_Log("Couldn't initialize video/joystick: %s", SDL_GetError());
@@ -183,20 +152,120 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 	return SDL_APP_CONTINUE;
 }
 
+vec_t *vec_for_opcode(int opcode)
+{
+	return opcode == gamesh_sdl_keyboard_event ? &keyboard_event_listeners
+		: opcode == gamesh_sdl_mouse_event ? &mouse_event_listeners
+		: opcode == gamesh_sdl_gamepad_event ? &gamepad_event_listeners
+		: NULL;
+}
+
+static int send_event(int opcode, SDL_Event *event)
+{
+	vec_t *listeners = vec_for_opcode(opcode);
+	assert(listeners);
+	if (!listeners)
+		return -1;
+
+	for (int i = 0; i < listeners->length; i++) {
+		int *event_fd = libadt_vector_index(*listeners, i);
+		writeop(*event_fd, opcode, event, sizeof(*event));
+	}
+	return 0;
+}
+
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
-	for (
-		int i = fd_manager_first(&client_event_fd_manager);
-		i >= 0;
-		i = fd_manager_next(&client_event_fd_manager, i)
-	) {
-		write_input(i, event);
+	int opcode = -1;
+	switch (event->type) {
+		case SDL_EVENT_KEY_DOWN:
+		case SDL_EVENT_KEY_UP:
+		case SDL_EVENT_TEXT_EDITING:
+		case SDL_EVENT_TEXT_INPUT:
+		case SDL_EVENT_KEYMAP_CHANGED:
+		case SDL_EVENT_KEYBOARD_ADDED:
+		case SDL_EVENT_KEYBOARD_REMOVED:
+		case SDL_EVENT_TEXT_EDITING_CANDIDATES:
+		case SDL_EVENT_SCREEN_KEYBOARD_SHOWN:
+		case SDL_EVENT_SCREEN_KEYBOARD_HIDDEN:
+			opcode = gamesh_sdl_keyboard_event;
+			break;
+
+		case SDL_EVENT_MOUSE_MOTION:
+		case SDL_EVENT_MOUSE_BUTTON_DOWN:
+		case SDL_EVENT_MOUSE_BUTTON_UP:
+		case SDL_EVENT_MOUSE_WHEEL:
+		case SDL_EVENT_MOUSE_ADDED:
+		case SDL_EVENT_MOUSE_REMOVED:
+			opcode = gamesh_sdl_mouse_event;
+			break;
+
+		case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+		case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+		case SDL_EVENT_GAMEPAD_BUTTON_UP:
+		case SDL_EVENT_GAMEPAD_ADDED:
+		case SDL_EVENT_GAMEPAD_REMOVED:
+		case SDL_EVENT_GAMEPAD_REMAPPED:
+		case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN:
+		case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION:
+		case SDL_EVENT_GAMEPAD_TOUCHPAD_UP:
+		case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
+		case SDL_EVENT_GAMEPAD_UPDATE_COMPLETE:
+		case SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED:
+			opcode = gamesh_sdl_gamepad_event;
+			break;
 	}
 
-	if (event->type == SDL_EVENT_QUIT)
-		return SDL_APP_SUCCESS;
+	if (-1 < opcode)
+		send_event(opcode, event);
 
 	return SDL_APP_CONTINUE;
+}
+
+void handle_new_event_listener(int event_opcode, struct msghdr header)
+{
+	struct cmsghdr *cmsg = CMSG_FIRSTHDR(&header);
+	for (; cmsg; cmsg = CMSG_NXTHDR(&header, cmsg)) {
+		if (!(
+			cmsg->cmsg_type == SOL_SOCKET
+			&& cmsg->cmsg_level == SCM_RIGHTS
+		))
+			continue;
+
+		vec_t *event_listeners = vec_for_opcode(event_opcode);
+		assert(event_listeners);
+		if (!event_listeners) {
+			fprintf(stderr, "Received listener for invalid opcode");
+			goto close_fds;
+		}
+
+		if (append(event_listeners, CMSG_DATA(cmsg)) < 0) {
+			fprintf(stderr, "Failed to add event_opcode listener\n");
+			goto close_fds;
+		}
+	}
+
+close_fds:
+	close_cmsg_fds(header);
+}
+
+void handle_events(
+	int fd,
+	int opcode,
+	void *buffer,
+	int size,
+	struct msghdr header,
+	void *context
+)
+{
+	if (opcode == gamesh_new_event_listener_event) {
+		if (size != sizeof(int))
+			return;
+
+		int event_opcode = *(int*)buffer;
+		handle_new_event_listener(event_opcode, header);
+		return;
+	}
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate)
@@ -209,8 +278,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 	struct pollfd last = { 0 };
 	do {
-		last = pollop(
-			handle_client_messages,
+		struct pollfd event_pollfd = {
+			.fd = event_fd,
+		};
+		last = pollopfd(
+			event_pollfd,
+			handle_events,
 			&result,
 			0
 		);

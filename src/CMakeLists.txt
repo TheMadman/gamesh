@@ -1,7 +1,8 @@
 find_package(SDL3 REQUIRED)
 
 add_library(gamesh SHARED gamesh.c)
-add_executable(game-runner game-runner.c fd-manager.c)
+add_executable(game-runner game-runner.c)
+add_executable(sdl-runner sdl-runner.c)
 
 target_include_directories(gamesh
 	PUBLIC
@@ -13,7 +14,8 @@ target_include_directories(game-runner
 	$<INSTALL_INTERFACE:include>)
 
 target_link_libraries(gamesh srvsh)
-target_link_libraries(game-runner SDL3::SDL3 srvsh adt)
+target_link_libraries(sdl-runner SDL3::SDL3 gamesh srvsh adt)
+target_link_libraries(game-runner srvsh adt)
 
 install(TARGETS gamesh
 	DESTINATION lib)
