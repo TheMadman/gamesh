@@ -23,22 +23,22 @@ SDL_Window *window;
 SDL_Renderer *renderer;
 
 int event_fd = -1;
-int gamesh_new_event_listener_event = -1;
+int gamesh_event_new_listener_event = -1;
 
 vec_t keyboard_event_listeners = { .size = sizeof(int) };
 vec_t mouse_event_listeners = { .size = sizeof(int) };
 vec_t gamepad_event_listeners = { .size = sizeof(int) };
 
 #define LISTEN_EVENTS(OPERATION) \
-	OPERATION(gamesh_sdl_texture_event) \
-	OPERATION(gamesh_sdl_texture_buffer_add_event) \
-	OPERATION(gamesh_sdl_texture_buffer_swap_event)
+	OPERATION(gamesh_sdl_event_texture) \
+	OPERATION(gamesh_sdl_event_texture_buffer_add) \
+	OPERATION(gamesh_sdl_event_texture_buffer_swap)
 
 #define EMIT_EVENTS(OPERATION) \
-	OPERATION(gamesh_sdl_quit_event) \
-	OPERATION(gamesh_sdl_keyboard_event) \
-	OPERATION(gamesh_sdl_mouse_event) \
-	OPERATION(gamesh_sdl_gamepad_event)
+	OPERATION(gamesh_sdl_event_quit) \
+	OPERATION(gamesh_sdl_event_keyboard) \
+	OPERATION(gamesh_sdl_event_mouse) \
+	OPERATION(gamesh_sdl_event_gamepad)
 
 #define CREATE_GLOBAL(MESSAGE_TYPE) int MESSAGE_TYPE = -1;
 LISTEN_EVENTS(CREATE_GLOBAL)
@@ -126,9 +126,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 		}
 	}
 
-	gamesh_new_event_listener_event = get_opcode(db, "gamesh_new_event_listener_event");
-	if (gamesh_new_event_listener_event < 0) {
-		fprintf(stderr, "Failed to load opcode gamesh_new_event_listener_event\n");
+	gamesh_event_new_listener_event = get_opcode(db, "gamesh_event_new_listener_event");
+	if (gamesh_event_new_listener_event < 0) {
+		fprintf(stderr, "Failed to load opcode gamesh_event_new_listener_event\n");
 		return SDL_APP_FAILURE;
 	}
 
@@ -154,9 +154,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 
 vec_t *vec_for_opcode(int opcode)
 {
-	return opcode == gamesh_sdl_keyboard_event ? &keyboard_event_listeners
-		: opcode == gamesh_sdl_mouse_event ? &mouse_event_listeners
-		: opcode == gamesh_sdl_gamepad_event ? &gamepad_event_listeners
+	return opcode == gamesh_sdl_event_keyboard ? &keyboard_event_listeners
+		: opcode == gamesh_sdl_event_mouse ? &mouse_event_listeners
+		: opcode == gamesh_sdl_event_gamepad ? &gamepad_event_listeners
 		: NULL;
 }
 
@@ -188,7 +188,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 		case SDL_EVENT_TEXT_EDITING_CANDIDATES:
 		case SDL_EVENT_SCREEN_KEYBOARD_SHOWN:
 		case SDL_EVENT_SCREEN_KEYBOARD_HIDDEN:
-			opcode = gamesh_sdl_keyboard_event;
+			opcode = gamesh_sdl_event_keyboard;
 			break;
 
 		case SDL_EVENT_MOUSE_MOTION:
@@ -197,7 +197,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 		case SDL_EVENT_MOUSE_WHEEL:
 		case SDL_EVENT_MOUSE_ADDED:
 		case SDL_EVENT_MOUSE_REMOVED:
-			opcode = gamesh_sdl_mouse_event;
+			opcode = gamesh_sdl_event_mouse;
 			break;
 
 		case SDL_EVENT_GAMEPAD_AXIS_MOTION:
@@ -212,7 +212,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 		case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
 		case SDL_EVENT_GAMEPAD_UPDATE_COMPLETE:
 		case SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED:
-			opcode = gamesh_sdl_gamepad_event;
+			opcode = gamesh_sdl_event_gamepad;
 			break;
 	}
 
@@ -258,7 +258,7 @@ void handle_events(
 	void *context
 )
 {
-	if (opcode == gamesh_new_event_listener_event) {
+	if (opcode == gamesh_event_new_listener_event) {
 		if (size != sizeof(int))
 			return;
 
