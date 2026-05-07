@@ -163,7 +163,6 @@ vec_t *vec_for_opcode(int opcode)
 static int send_event(int opcode, SDL_Event *event)
 {
 	vec_t *listeners = vec_for_opcode(opcode);
-	assert(listeners);
 	if (!listeners)
 		return -1;
 
@@ -214,11 +213,17 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 		case SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED:
 			opcode = gamesh_sdl_event_gamepad;
 			break;
+
+		case SDL_EVENT_QUIT:
+			opcode = gamesh_sdl_event_quit;
+			break;
 	}
 
 	if (-1 < opcode)
 		send_event(opcode, event);
 
+	if (event->type == SDL_EVENT_QUIT)
+		return SDL_APP_SUCCESS;
 	return SDL_APP_CONTINUE;
 }
 
