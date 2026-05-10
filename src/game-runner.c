@@ -104,29 +104,34 @@ static int find_event_socket(vec_t vector, int id)
 	return found->event_socket;
 }
 
-static ssize_t send_fd(int receiver, int opcode, int data)
+static ssize_t send_fd_data(int receiver, int opcode, int fd_to_send, void *data, int length)
 {
 	union {
 		struct cmsghdr header;
-		char buf[CMSG_SPACE(sizeof(data))];
+		char buf[CMSG_SPACE(sizeof(fd_to_send))];
 	} cmsg = {
 		.header = {
 			.cmsg_level = SOL_SOCKET,
 			.cmsg_type = SCM_RIGHTS,
-			.cmsg_len = CMSG_LEN(sizeof(data)),
+			.cmsg_len = CMSG_LEN(sizeof(fd_to_send)),
 		},
 	};
 
-	memcpy(CMSG_DATA(&cmsg.header), &data, sizeof(data));
+	memcpy(CMSG_DATA(&cmsg.header), &fd_to_send, sizeof(fd_to_send));
 
 	return sendmsgop(
 		receiver,
 		opcode,
-		NULL,
-		0,
+		data,
+		length,
 		&cmsg.header,
 		sizeof(cmsg)
 	);
+}
+
+static ssize_t send_fd(int receiver, int opcode, int fd_to_send)
+{
+	return send_fd_data(receiver, opcode, fd_to_send, NULL, 0);
 }
 
 static bool send_event_fd_response(int fd)
@@ -204,7 +209,9 @@ static entry_t *insert_other(entry_t *_, void *context)
 
 static entry_t *send_event_fds_to(entry_t *listeners, void *context)
 {
-	int *emitter_fd = context;
+	int *emitter_fd_opcode = context;
+	int emitter_event_fd = emitter_fd_opcode[0];
+	int opcode = emitter_fd_opcode[1];
 	for (size_t i = 0; i < listeners->fds.length; i++) {
 		int *listener_fd = libadt_vector_index(listeners->fds, i);
 		int listener_event_fd = find_event_socket(
@@ -214,18 +221,24 @@ static entry_t *send_event_fds_to(entry_t *listeners, void *context)
 		if (listener_event_fd < 0)
 			continue;
 
-		send_fd(
-			*emitter_fd,
+		if (send_fd_data(
+			emitter_event_fd,
 			gamesh_event_new_listener_event,
-			*listener_fd
-		);
+			listener_event_fd,
+			&opcode,
+			sizeof(opcode)
+		) < 0) {
+			fprintf(stderr, "send_event_fds_to: Failed to send client listener_event_fd %d to emitter %d\n", listener_event_fd, emitter_event_fd);
+		}
 	}
 	return listeners;
 }
 
 static entry_t *send_event_fds_to_each(entry_t *emitters, void *context)
 {
-	int *listener_event_fd = context;
+	int *event_fd_opcode = context;
+	int listener_event_fd = event_fd_opcode[0];
+	int opcode = event_fd_opcode[1];
 	for (size_t i = 0; i < emitters->fds.length; i++) {
 		int *emitter_fd = libadt_vector_index(emitters->fds, i);
 		int emitter_event_fd = find_event_socket(
@@ -235,11 +248,15 @@ static entry_t *send_event_fds_to_each(entry_t *emitters, void *context)
 		if (emitter_event_fd < 0)
 			continue;
 
-		send_fd(
+		if (send_fd_data(
 			emitter_event_fd,
 			gamesh_event_new_listener_event,
-			*listener_event_fd
-		);
+			listener_event_fd,
+			&opcode,
+			sizeof(opcode)
+		) < 0) {
+			fprintf(stderr, "send_event_fds_to_each: Failed to send client listener_event_fd %d to emitter %d\n", listener_event_fd, emitter_event_fd);
+		}
 	}
 	return emitters;
 }
@@ -270,18 +287,21 @@ static bool add_client_listener_for_opcode(int client_fd, int opcode)
 	entry_t *entry = find_entry(opcode_listener_fds, opcode);
 	entry = or(entry, insert_other, &other);
 	entry = then(entry, add_client_fd, &client_fd);
+
+	int success = !!entry;
+	int opcode_to_send = entry ? gamesh_event_listen_response : -1;
+	writeop(client_fd, opcode_to_send, NULL, 0);
+
 	find_entry_t find_emitters = {
 		.vec = &opcode_emitter_fds,
 		.id = opcode,
 	};
 	entry = then(entry, find_entry_wrapper, &find_emitters);
 
-	int opcode_to_send = entry ? gamesh_event_listen_response : -1;
-	writeop(client_fd, opcode_to_send, NULL, 0);
+	int fd_opcode[2] = { event_fd, opcode };
+	entry = then(entry, send_event_fds_to_each, &fd_opcode);
 
-	entry = then(entry, send_event_fds_to_each, &event_fd);
-
-	return !!entry;
+	return success;
 }
 
 static bool add_client_emitter_for_opcode(int client_fd, int opcode)
@@ -297,18 +317,21 @@ static bool add_client_emitter_for_opcode(int client_fd, int opcode)
 	entry_t *entry = find_entry(opcode_emitter_fds, opcode);
 	entry = or(entry, insert_other, &other);
 	entry = then(entry, add_client_fd, &client_fd);
+
+	bool result = !!entry;
+	int opcode_to_send = entry ? gamesh_event_emit_response : -1;
+	writeop(client_fd, opcode_to_send, NULL, 0);
+
 	find_entry_t find_listeners = {
 		.vec = &opcode_listener_fds,
 		.id = opcode,
 	};
+
+	int event_fd_opcode[2] = { event_fd, opcode };
 	entry = then(entry, find_entry_wrapper, &find_listeners);
+	entry = then(entry, send_event_fds_to, &event_fd_opcode);
 
-	int opcode_to_send = entry? gamesh_event_emit_response : -1;
-	writeop(client_fd, opcode_to_send, NULL, 0);
-
-	entry = then(entry, send_event_fds_to, &event_fd);
-
-	return !!entry;
+	return result;
 }
 
 static void handle_client_messages(
@@ -363,7 +386,7 @@ int main()
 			handle_client_messages,
 			NULL,
 			// &result,
-			0
+			-1
 		);
 		if (last.revents && !(last.revents & POLLIN))
 			number_clients--;

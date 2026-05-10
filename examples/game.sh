@@ -2,6 +2,5 @@
 
 game-runner {
 	sdl-runner
-	./event-emitter
-	./event-listener
+	examples/keyboard-test
 }

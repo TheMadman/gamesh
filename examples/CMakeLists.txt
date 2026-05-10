@@ -6,6 +6,4 @@ endfunction()
 
 file(COPY game.sh DESTINATION .)
 
-example(event-emitter)
-example(event-listener)
 example(keyboard-test)

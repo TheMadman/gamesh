@@ -1,7 +1,5 @@
 # default opcodes for the game runner
 
-gamesh_event_exit
-
 gamesh_event_fd_request
 gamesh_event_fd_response
 gamesh_event_listen_request
