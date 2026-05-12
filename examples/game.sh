@@ -2,5 +2,5 @@
 
 game-runner {
 	sdl-runner
-	examples/keyboard-test
+	examples/keyboard-example
 }

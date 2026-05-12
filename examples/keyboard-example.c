@@ -12,6 +12,42 @@ bool keep_running = true;
 
 #define PERROR_EXIT(...) fprintf(stderr, __VA_ARGS__), fprintf(stderr, "\n"), exit(EXIT_FAILURE)
 
+#define EVENT_TYPES(OPERATION) \
+	OPERATION(SDL_EVENT_KEY_DOWN) \
+	OPERATION(SDL_EVENT_KEY_UP) \
+	OPERATION(SDL_EVENT_TEXT_EDITING) \
+	OPERATION(SDL_EVENT_TEXT_INPUT) \
+	OPERATION(SDL_EVENT_KEYMAP_CHANGED) \
+	OPERATION(SDL_EVENT_KEYBOARD_ADDED) \
+	OPERATION(SDL_EVENT_KEYBOARD_REMOVED) \
+	OPERATION(SDL_EVENT_TEXT_EDITING_CANDIDATES) \
+	OPERATION(SDL_EVENT_SCREEN_KEYBOARD_SHOWN) \
+	OPERATION(SDL_EVENT_SCREEN_KEYBOARD_HIDDEN)
+
+#define CREATE_STRUCT(EVENT) { EVENT, #EVENT },
+
+typedef struct {
+	SDL_EventType type;
+	const char *name;
+} event_name;
+
+event_name events[] = {
+	EVENT_TYPES(CREATE_STRUCT)
+	{ 0 },
+};
+
+void print_event(SDL_Event *e)
+{
+	for (event_name *c = events; c->name; c++)
+		if (e->type == c->type) {
+			printf("%s", c->name);
+			if (e->type == SDL_EVENT_KEY_DOWN)
+				printf(" '%c'", ((SDL_KeyboardEvent *)e)->key);
+			printf("\n");
+			return;
+		}
+}
+
 void process_event(
 	int fd,
 	int opcode,
@@ -23,8 +59,13 @@ void process_event(
 {
 	if (opcode == gamesh_sdl_event_quit)
 		keep_running = false;
-	else if (opcode == gamesh_sdl_event_keyboard)
-		puts("Listener received gamesh_sdl_event_keyboard");
+	else if (opcode == gamesh_sdl_event_keyboard) {
+		if (length < sizeof(SDL_Event)) {
+			fprintf(stderr, "Received event of wrong size\n");
+			return;
+		}
+		print_event(data);
+	}
 }
 
 int main()
