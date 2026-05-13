@@ -6,4 +6,4 @@ endfunction()
 
 file(COPY game.sh DESTINATION .)
 
-example(keyboard-test)
+example(keyboard-example)
