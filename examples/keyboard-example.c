@@ -5,12 +5,13 @@
 #include <SDL3/SDL.h>
 #include <stdbool.h>
 
-int event_fd = -1;
 int gamesh_sdl_event_keyboard = -1;
 int gamesh_sdl_event_quit = -1;
 bool keep_running = true;
 
-#define PERROR_EXIT(...) fprintf(stderr, __VA_ARGS__), fprintf(stderr, "\n"), exit(EXIT_FAILURE)
+#define ARRLEN(ARRAY) (sizeof(ARRAY) / sizeof(ARRAY[0]))
+
+#define PERROR_EXIT(MESSAGE) perror(MESSAGE), exit(EXIT_FAILURE)
 
 #define EVENT_TYPES(OPERATION) \
 	OPERATION(SDL_EVENT_KEY_DOWN) \
@@ -82,14 +83,14 @@ int main()
 	if (gamesh_sdl_event_keyboard < 0)
 		PERROR_EXIT("failed to load gamesh_sdl_event_keyboard");
 
-	event_fd = gamesh_event_fd();
-	if (event_fd < 0)
-		PERROR_EXIT("failed getting event_fd");
+	int opcodes[] = {
+		gamesh_sdl_event_quit,
+		gamesh_sdl_event_keyboard,
+	};
 
-	if (gamesh_event_listen(gamesh_sdl_event_keyboard) < 0)
-		PERROR_EXIT("failed setting event listener");
-	if (gamesh_event_listen(gamesh_sdl_event_quit) < 0)
-		PERROR_EXIT("failed setting event listener for quit event");
+	int event_fd = gamesh_events_listen(ARRLEN(opcodes), opcodes);
+	if (event_fd < 0)
+		PERROR_EXIT("failed to get event_fd");
 
 	struct pollfd poll_event = { .fd = event_fd };
 	while (keep_running)

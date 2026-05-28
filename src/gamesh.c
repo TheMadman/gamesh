@@ -7,15 +7,7 @@
 #include <srvsh.h>
 
 #define MESSAGE_LIST(OPERATION) \
-	OPERATION(gamesh_event_fd_request) \
-	OPERATION(gamesh_event_fd_response) \
-	OPERATION(gamesh_event_listen_request) \
-	OPERATION(gamesh_event_listen_response) \
-	OPERATION(gamesh_event_emit_request) \
-	OPERATION(gamesh_event_emit_response) \
-	OPERATION(gamesh_event_new_listener_event)
-
-
+	OPERATION(gamesh_event_listen_op)
 
 #define DECLARE_INT(MESSAGE) int MESSAGE = -1;
 MESSAGE_LIST(DECLARE_INT)
@@ -53,7 +45,7 @@ static ssize_t send_fd(int receiver, int opcode, void *data, int length, int fd)
 
 static int init_opcodes(void)
 {
-	struct opcode {
+	static const struct opcode {
 		const char *message;
 		int *destination;
 	} opcodes[] = {
@@ -61,11 +53,9 @@ static int init_opcodes(void)
 		{ 0 },
 	};
 
-#undef OPCODE
-
 	opcode_db *db = NULL;
 
-	struct opcode *current;
+	const struct opcode *current;
 	for (current = opcodes; current->message; current++) {
 		if (*current->destination == -1) {
 			if (!db)
@@ -81,52 +71,12 @@ static int init_opcodes(void)
 	return 0;
 }
 
-static void event_fd_response(
-	int fd,
-	int opcode,
-	void *buffer,
-	int size,
-	struct msghdr header,
-	void *context
-)
-{
-	int *response_fd = context;
-	if (opcode != gamesh_event_fd_response)
-		return;
-
-	struct cmsghdr *cmsg = CMSG_FIRSTHDR(&header);
-
-	if (!cmsg)
-		return;
-
-	if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
-		return;
-
-	memcpy(response_fd, CMSG_DATA(cmsg), sizeof(*response_fd));
-}
-
-int gamesh_event_fd(void)
-{
-	if (init_opcodes() == -1)
-		return -1;
-
-	ssize_t written = writesrv(gamesh_event_fd_request, NULL, 0);
-	if (written < 0)
-		return -1;
-
-	int response_fd = -1;
-
-	pollopsrv(event_fd_response, &response_fd, -1);
-
-	return response_fd;
-}
-
 void gamesh_event_fd_close(int fd)
 {
 	close(fd);
 }
 
-void event_listen_response(
+static void event_listen_response(
 	int fd,
 	int opcode,
 	void *data,
@@ -135,52 +85,47 @@ void event_listen_response(
 	void *context
 )
 {
-	*(int*)context = opcode == gamesh_event_listen_response;
+	*(int*)context = opcode == gamesh_event_listen_op ? 0 : -1;
 }
 
-int gamesh_event_listen(int opcode)
+int gamesh_events_listen(int opcodec, int *opcodev)
 {
 	// I don't like doing this in every single function but
 	// I can't figure out something better yet
 	if (init_opcodes() == -1)
 		return -1;
 
-	ssize_t written = writesrv(gamesh_event_listen_request, &opcode, sizeof(opcode));
-	if (written < 0)
+	int sockets[2] = { 0 };
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) < 0)
 		return -1;
+
+	ssize_t written = send_fd(
+		SRV_FILENO,
+		gamesh_event_listen_op,
+		opcodev,
+		sizeof(*opcodev) * opcodec,
+		sockets[1]
+	);
+	close(sockets[1]);
+	if (written < 0)
+		goto close_socket;
 
 	int result = -1;
 
 	pollopsrv(event_listen_response, &result, -1);
 
-	return result;
+	if (result < 0)
+		goto close_socket;
+
+	return sockets[0];
+
+close_socket:
+	close(sockets[0]);
+	return -1;
 }
 
-void event_emit_response(
-	int fd,
-	int opcode,
-	void *data,
-	int size,
-	struct msghdr header,
-	void *context
-)
+int gamesh_event_listen(int opcode)
 {
-	*(int*)context = opcode == gamesh_event_emit_response;
-}
-
-int gamesh_event_emit(int opcode)
-{
-	if (init_opcodes() == -1)
-		return -1;
-
-	ssize_t written = writesrv(gamesh_event_emit_request, &opcode, sizeof(opcode));
-	if (written < 0)
-		return -1;
-
-	int result = -1;
-
-	pollopsrv(event_emit_response, &result, -1);
-
-	return result;
+	return gamesh_events_listen(1, &opcode);
 }
 

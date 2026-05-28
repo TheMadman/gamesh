@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-\
+
 #ifndef GAMESH_GAMESH
 #define GAMESH_GAMESH
 
@@ -28,113 +28,38 @@ extern "C" {
  */
 
 #include <stddef.h>
+#include <SDL3/SDL.h>
 
 /**
- * \brief Type definition for sprite IDs, for use with damage/sync
- * 	events.
- */
-typedef int gamesh_sprite_id_t;
-
-/**
- * \brief Represents a keyboard event.
- */
-struct gamesh_keyboard {
-	/**
-	 * \brief The tick number that this event was
-	 * 	generated on.
-	 */
-	unsigned long timestamp;
-
-	/**
-	 * \brief Represents the physical keycode,
-	 * 	independently of the keyboard layout
-	 * 	or locale.
-	 */
-	int code;
-
-	/**
-	 * \brief Represents the key pressed, taking
-	 * 	keyboard layout/locale into consideration.
-	 */
-	int key;
-
-	/**
-	 * \brief Represents whether this key was pressed
-	 * 	or released.
-	 */
-	int pressed;
-};
-
-/**
- * \brief Represents a sprite request.
- */
-struct gamesh_sprite {
-	/**
-	 * \brief The height of the sprite in pixels.
-	 */
-	size_t height;
-
-	/**
-	 * \brief The width of the sprite in pixels.
-	 */
-	size_t width;
-
-	/**
-	 * \brief The colour depth of the sprite in bits.
-	 */
-	unsigned bit_depth;
-};
-
-/**
- * \brief Converts a number between 0.0 and 1.0 to
- * 	its byte representation.
+ * \brief This function returns a file descriptor, which will
+ * 	receive events with the given opcodes.
  *
- * Out-of-bounds numbers are capped.
+ * This version allows a single file descriptor to receive
+ * multiple event types.
+ *
+ * \param opcodesn The number of opcodes to register for this
+ * 	event listener.
+ * \param opcodes A pointer to an array of opcodes.
+ * \returns A file descriptor for receiving the given events.
  */
-static inline unsigned char gamesh_to_byte(double value)
-{
-	if (value <= 0.0)
-		return 0;
-	if (value >= 1.0)
-		return 255;
-	return (unsigned char)(value * 255);
-}
+int gamesh_events_listen(int opcodesn, int *opcodes);
 
 /**
- * \returns A file descriptor for events.
+ * \brief This function returns a file descriptor, which will
+ * 	receive events with the given opcode.
  *
- * The file descriptor is never read by the server.
- */
-int gamesh_event_fd(void);
-
-/**
- * \brief Closes the event file descriptor.
- */
-void gamesh_event_fd_close(int fd);
-
-/**
- * \brief Requests to start receiving events with the
- * 	given opcode on this client's open event_fds,
- * 	opened with gamesh_event_fd().
+ * This version returns a file descriptor that only receives
+ * a single event type.
  *
- * \param opcode The opcode to register interest in.
- *
- * \returns 0 on success, -1 on error.
+ * \param opcode The opcode to register for this event listener.
+ * \returns A file descriptor for receiving the given events.
  */
 int gamesh_event_listen(int opcode);
 
 /**
- * \brief Requests to start receiving event listeners
- * 	with the given opcode on this client's open event_fds,
- * 	opened with gamesh_event_fd().
- *
- * Use this function to declare that this application will
- * emit this event. All listener event fds will be sent to
- * this application via its event_fd.
- *
- * \returns 0 on success, -1 on error.
+ * \brief Closes the event file descriptor.
  */
-int gamesh_event_emit(int opcode);
+void gamesh_event_close(int fd);
 
 #ifdef __cplusplus
 } // extern "C"
