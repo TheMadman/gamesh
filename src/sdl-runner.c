@@ -11,12 +11,26 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#include "gamesh/gamesh.h"
+
 typedef struct libadt_vector vec_t;
 
 #define DEFAULT_HEIGHT 720
 #define DEFAULT_WIDTH 1280
 
 #define ARRLENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
+
+#define index libadt_vector_index
+
+// I should probably add some inline functions like this in libadt..
+static int append(vec_t *vec, void *data)
+{
+	vec_t attempt = libadt_vector_append(*vec, data);
+	if (libadt_vector_identity(attempt, *vec))
+		return -1;
+	*vec = attempt;
+	return 0;
+}
 
 SDL_Window *window;
 SDL_Renderer *renderer;
@@ -30,20 +44,62 @@ vec_t mouse_event_listeners = { .size = sizeof(int) };
 vec_t gamepad_event_listeners = { .size = sizeof(int) };
 vec_t quit_event_listeners = { .size = sizeof(int) };
 
+typedef struct {
+	vec_t buffers;
+	int active_buffer;
+	SDL_Texture *texture;
+} surface_t;
+
+vec_t render_surfaces = { .size = sizeof(vec_t) };
+
+SDL_AppResult init_render_surfaces(void)
+{
+	render_surfaces = libadt_vector_init(sizeof(vec_t), cli_count());
+	if (!render_surfaces.capacity) {
+		SDL_Log("Couldn't initialize surfaces vector");
+		return SDL_APP_FAILURE;
+	}
+
+	for (int i = 0; i < cli_count(); i++) {
+		vec_t client_surfaces = { .size = sizeof(surface_t) };
+		if (append(&render_surfaces, &client_surfaces) < 0) {
+			// This should never happen, but e.
+			SDL_Log("Appending client surfaces failed");
+			return SDL_APP_FAILURE;
+		}
+	}
+
+	return SDL_APP_CONTINUE;
+}
+
+static vec_t *get_client_surfaces(int fd)
+{
+	if (render_surfaces.length <= fd - CLI_BEGIN)
+		return NULL;
+	return index(render_surfaces, fd - CLI_BEGIN);
+}
+
+static surface_t *get_surface(vec_t *surfaces, int surface_id)
+{
+	if (surfaces->length <= surface_id)
+		return NULL;
+	return index(*surfaces, surface_id);
+}
+
 #define MESSAGE_TYPES(OPERATION) \
 	OPERATION(gamesh_event_listen_op) \
 	OPERATION(gamesh_sdl_event_quit) \
 	OPERATION(gamesh_sdl_event_keyboard) \
 	OPERATION(gamesh_sdl_event_mouse) \
-	OPERATION(gamesh_sdl_event_gamepad)
+	OPERATION(gamesh_sdl_event_gamepad) \
+	OPERATION(gamesh_sdl_render_surface) \
+	OPERATION(gamesh_sdl_render_surface_buffer_add) \
+	OPERATION(gamesh_sdl_render_surface_buffer_swap)
 
 #define CREATE_GLOBAL(MESSAGE_TYPE) int MESSAGE_TYPE = -1;
 MESSAGE_TYPES(CREATE_GLOBAL)
 
-#define eprintf(...) fprintf(stderr, "%s:%d: ", __FILE__, __LINE__), \
-	fprintf(stderr, __VA_ARGS__), \
-	fprintf(stderr, "\n")
-#define PRINT_MESSAGE_TYPE(MESSAGE_TYPE) eprintf("%s %d\n", #MESSAGE_TYPE, MESSAGE_TYPE);
+#define PRINT_MESSAGE_TYPE(MESSAGE_TYPE) SDL_Log("%s %d\n", #MESSAGE_TYPE, MESSAGE_TYPE);
 
 static inline void print_messages(void)
 {
@@ -58,16 +114,6 @@ typedef struct {
 bool keep_running = true;
 
 #define CREATE_STRUCT(MESSAGE_TYPE) { &MESSAGE_TYPE, #MESSAGE_TYPE },
-
-// I should probably add some inline functions like this in libadt..
-static int append(vec_t *vec, void *data)
-{
-	vec_t attempt = libadt_vector_append(*vec, data);
-	if (libadt_vector_identity(attempt, *vec))
-		return -1;
-	*vec = attempt;
-	return 0;
-}
 
 // expects one cmsg header with file descriptors and nothing else
 static int get_fd(struct msghdr header)
@@ -88,7 +134,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 {
 	opcode_db *db = open_opcode_db();
 	if (!db) {
-		eprintf("Failed to open opcodedb");
+		SDL_Log("Failed to open opcodedb");
 		return SDL_APP_FAILURE;
 	}
 	static const message_opcode emit_opcodes[] = {
@@ -99,12 +145,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 	for (const message_opcode *current = emit_opcodes; current->destination; current++) {
 		*current->destination = get_opcode(db, current->name);
 		if (*current->destination < 0) {
-			eprintf("Failed to load opcode %s", current->name);
+			SDL_Log("Failed to load opcode %s", current->name);
 			return SDL_APP_FAILURE;
 		}
 	}
 
 	close_opcode_db(db);
+
+	SDL_AppResult init_render_surfaces_result = init_render_surfaces();
+	if (init_render_surfaces_result != SDL_APP_CONTINUE)
+		return init_render_surfaces_result;
 
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
 		SDL_Log("Couldn't initialize video/joystick: %s", SDL_GetError());
@@ -140,7 +190,7 @@ static int send_event(int opcode, SDL_Event *event)
 		return -1;
 
 	for (size_t i = 0; i < listeners->length; i++) {
-		int *event_fd = libadt_vector_index(*listeners, (int)i);
+		int *event_fd = index(*listeners, (int)i);
 		writeop(*event_fd, opcode, event, sizeof(*event));
 	}
 	return 0;
@@ -202,7 +252,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 	return SDL_APP_CONTINUE;
 }
 
-int handle_new_listener(int fd, int *opcodes, int count)
+static int handle_new_listener(int fd, int *opcodes, int count)
 {
 	// only return an error if no opcodes were valid/appended
 	int result = -1;
@@ -215,6 +265,55 @@ int handle_new_listener(int fd, int *opcodes, int count)
 	}
 
 	return result;
+}
+
+static int handle_new_surface(int fd)
+{
+	surface_t surface = {
+		.buffers = {
+			.size = sizeof(gamesh_shared_buffer_t*),
+		},
+		.active_buffer = 0,
+		.texture = NULL,
+	};
+
+	vec_t *surfaces = get_client_surfaces(fd);
+	if (!surfaces)
+		// should never happen, so if it does something's seriously wrong
+		return -1;
+
+	if (append(surfaces, &surface) < 0) {
+		return -1;
+	}
+	return surfaces->length - 1;
+}
+
+int handle_new_surface_buffer(int fd, gamesh_recv_buffer_t recv_buffer)
+{
+	const bool error = recv_buffer.surface_id < 0
+		|| recv_buffer.buffer == NULL;
+
+	if (error)
+		return -1;
+
+	vec_t *surfaces = get_client_surfaces(fd);
+	if (!surfaces)
+		return -1;
+
+	surface_t *surface = get_surface(surfaces, recv_buffer.surface_id);
+	if (!surface)
+		return -1;
+
+	if (append(&surface->buffers, &recv_buffer.buffer) < 0)
+		return -1;
+
+	if (surface->texture == NULL)
+		surface->texture = SDL_CreateTextureFromSurface(
+			renderer,
+			gamesh_get_shared_buffer_surface(recv_buffer.buffer)
+		);
+
+	return surface->buffers.length - 1;
 }
 
 void handle_events(
@@ -230,11 +329,34 @@ void handle_events(
 	if (fd == SRV_FILENO)
 		return;
 
-	if (opcode == gamesh_event_listen_op)
+	if (opcode == gamesh_event_listen_op) {
 		if (-1 < handle_new_listener(get_fd(header), buffer, size / sizeof(int))) {
 			writeop(fd, gamesh_event_listen_op, NULL, 0);
 			return;
 		}
+	} else if (opcode == gamesh_sdl_render_surface) {
+		int result = handle_new_surface(fd);
+		if (-1 < result) {
+			writeop(fd, gamesh_sdl_render_surface, &result, sizeof(result));
+			return;
+		}
+	} else if (opcode == gamesh_sdl_render_surface_buffer_add) {
+		gamesh_recv_buffer_t recv_buffer = gamesh_recv_shared_buffer(
+			opcode,
+			buffer,
+			size,
+			header
+		);
+		int result = handle_new_surface_buffer(fd, recv_buffer);
+		if (-1 < result) {
+			writeop(
+				fd,
+				gamesh_sdl_render_surface_buffer_add,
+				&result,
+				sizeof(result)
+			);
+		}
+	}
 
 	// error case
 	writeop(fd, error_opcode, NULL, 0);
@@ -244,7 +366,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 {
 	SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
 	SDL_RenderClear(renderer);
-	SDL_RenderPresent(renderer);
 
 	SDL_AppResult result = SDL_APP_CONTINUE;
 
@@ -252,6 +373,17 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 	do {
 		last = pollop(handle_events, &result, 0);
 	} while (last.revents && !(last.revents & POLLIN) && keep_running);
+
+	for (int i = 0; i < render_surfaces.length; i++) {
+		vec_t *client_surfaces = index(render_surfaces, i);
+		for (int j = 0; j < client_surfaces->length; j++) {
+			surface_t *surface = index(*client_surfaces, j);
+			if (surface->texture) {
+				SDL_RenderTexture(renderer, surface->texture, NULL, NULL);
+			}
+		}
+	}
+	SDL_RenderPresent(renderer);
 
 	return result;
 }

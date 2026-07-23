@@ -8,7 +8,7 @@ target_include_directories(gamesh
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 	$<INSTALL_INTERFACE:include>)
 
-target_link_libraries(gamesh srvsh)
+target_link_libraries(gamesh srvsh SDL3::SDL3)
 target_link_libraries(sdl-runner SDL3::SDL3 gamesh srvsh adt)
 
 install(TARGETS gamesh

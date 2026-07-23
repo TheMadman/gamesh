@@ -37,13 +37,13 @@ event_name events[] = {
 	{ 0 },
 };
 
-void print_event(SDL_Event *e)
+void print_event(SDL_Event *event)
 {
-	for (event_name *c = events; c->name; c++)
-		if (e->type == c->type) {
-			printf("%s", c->name);
-			if (e->type == SDL_EVENT_KEY_DOWN)
-				printf(" '%c'", ((SDL_KeyboardEvent *)e)->key);
+	for (event_name *current = events; current->name; current++)
+		if (event->type == current->type) {
+			printf("%s", current->name);
+			if (event->type == SDL_EVENT_KEY_DOWN)
+				printf(" '%c'", ((SDL_KeyboardEvent *)event)->key);
 			printf("\n");
 			return;
 		}
@@ -88,7 +88,7 @@ int main()
 		gamesh_sdl_event_keyboard,
 	};
 
-	int event_fd = gamesh_events_listen(ARRLEN(opcodes), opcodes);
+	int event_fd = gamesh_events_listen(opcodes, ARRLEN(opcodes));
 	if (event_fd < 0)
 		PERROR_EXIT("failed to get event_fd");
 
