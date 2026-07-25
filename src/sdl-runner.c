@@ -288,7 +288,18 @@ static int handle_new_surface(int fd)
 	return surfaces->length - 1;
 }
 
-int handle_new_surface_buffer(int fd, gamesh_recv_buffer_t recv_buffer)
+static int update_texture(SDL_Surface *surface, SDL_Texture *texture)
+{
+	SDL_Surface *texture_surface;
+	if (!SDL_LockTextureToSurface(texture, NULL, &texture_surface))
+		return -1;
+
+	int result = SDL_BlitSurface(surface, NULL, texture_surface, NULL);
+	SDL_UnlockTexture(texture);
+	return result ? 0 : -1;
+}
+
+static int handle_new_surface_buffer(int fd, gamesh_recv_buffer_t recv_buffer)
 {
 	const bool error = recv_buffer.surface_id < 0
 		|| recv_buffer.buffer == NULL;
@@ -307,16 +318,21 @@ int handle_new_surface_buffer(int fd, gamesh_recv_buffer_t recv_buffer)
 	if (append(&surface->buffers, &recv_buffer.buffer) < 0)
 		return -1;
 
-	if (surface->texture == NULL)
-		surface->texture = SDL_CreateTextureFromSurface(
+	if (surface->texture == NULL) {
+		SDL_Surface *buffer = gamesh_get_shared_buffer_surface(recv_buffer.buffer);
+		surface->texture = SDL_CreateTexture(
 			renderer,
-			gamesh_get_shared_buffer_surface(recv_buffer.buffer)
+			buffer->format,
+			SDL_TEXTUREACCESS_STREAMING,
+			buffer->w,
+			buffer->h
 		);
+	}
 
 	return surface->buffers.length - 1;
 }
 
-void handle_events(
+static void handle_requests(
 	int fd,
 	int opcode,
 	void *buffer,
@@ -362,6 +378,17 @@ void handle_events(
 	writeop(fd, error_opcode, NULL, 0);
 }
 
+static gamesh_shared_buffer_t *get_buffer(surface_t surface, int i)
+{
+	bool error = i < 0
+		|| surface.buffers.length <= i;
+
+	if (error)
+		return NULL;
+
+	return *(gamesh_shared_buffer_t**)index(surface.buffers, i);
+}
+
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
 	SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
@@ -371,14 +398,25 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 	struct pollfd last = { 0 };
 	do {
-		last = pollop(handle_events, &result, 0);
+		last = pollop(handle_requests, &result, 0);
 	} while (last.revents && !(last.revents & POLLIN) && keep_running);
 
-	for (int i = 0; i < render_surfaces.length; i++) {
-		vec_t *client_surfaces = index(render_surfaces, i);
+	for (int i = CLI_BEGIN; i < cli_end(); i++) {
+		vec_t *client_surfaces = get_client_surfaces(i);
+
 		for (int j = 0; j < client_surfaces->length; j++) {
-			surface_t *surface = index(*client_surfaces, j);
+			surface_t *surface = get_surface(client_surfaces, j);
 			if (surface->texture) {
+				gamesh_shared_buffer_t *buffer = get_buffer(*surface, surface->active_buffer);
+				if (!buffer)
+					continue;
+
+				// probably some logic for "skip if active buffer == last active buffer"
+				if (update_texture(gamesh_get_shared_buffer_surface(buffer), surface->texture) < 0) {
+					SDL_Log("Couldn't update texture: %s", SDL_GetError());
+					continue;
+				}
+
 				SDL_RenderTexture(renderer, surface->texture, NULL, NULL);
 			}
 		}
