@@ -33,11 +33,6 @@ extern "C" {
 
 typedef struct gamesh_shared_buffer_s gamesh_shared_buffer_t;
 
-typedef struct gamesh_recv_buffer_s {
-	int surface_id;
-	gamesh_shared_buffer_t *buffer;
-} gamesh_recv_buffer_t;
-
 /**
  * \brief This function returns a file descriptor, which will
  * 	receive events with the given opcodes.
@@ -122,7 +117,7 @@ void gamesh_destroy_shared_buffer(gamesh_shared_buffer_t *buffer);
  * \returns A buffer_id that is unique for this surface_id, or -1 on
  * 	failure.
  */
-int gamesh_add_surface_buffer(int surface_id, gamesh_shared_buffer_t *buffer);
+int gamesh_add_surface_buffer(gamesh_shared_buffer_t *buffer);
 
 /**
  * \brief Sets the buffer to use as the current active buffer.
@@ -135,20 +130,18 @@ int gamesh_add_surface_buffer(int surface_id, gamesh_shared_buffer_t *buffer);
 int gamesh_set_surface_buffer(int surface_id, int buffer_id);
 
 /**
- * \brief Take data from a pollop() callback and returns a struct
- * 	containing `int surface_id`/`gamesh_shared_buffer_t *buffer`.
+ * \brief Take data from a pollop() callback and returns a
+ * 	`gamesh_shared_buffer_t *`.
  *
  * \param opcode The opcode received from pollop().
  * \param buffer The buffer received from pollop().
  * \param length The length received from pollop().
  * \param header The header received from pollop().
  *
- * \returns If valid, this function returns a struct containing
- * 	a surface ID and a pointer to a gamesh_shared_buffer_t.
- * 	On failure, the `surface_id` property will be -1 and the
- * 	`buffer` property will be a NULL pointer.
+ * \returns If valid, this function returns a `gamesh_shared_buffer_t *`,
+ * 	or NULL on failure.
  */
-gamesh_recv_buffer_t gamesh_recv_shared_buffer(
+gamesh_shared_buffer_t *gamesh_recv_shared_buffer(
 	int opcode,
 	void *buffer,
 	int length,

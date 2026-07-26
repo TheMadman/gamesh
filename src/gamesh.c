@@ -27,7 +27,6 @@ struct gamesh_shared_buffer_s {
 };
 
 typedef struct gamesh_surface_add_s {
-	int surface_id;
 	SDL_Surface sdl_surface;
 } gamesh_surface_add_t;
 
@@ -305,22 +304,17 @@ static void add_surface_buffer_response(
 	*result = *(int*)data;
 }
 
-int gamesh_add_surface_buffer(int surface_id, gamesh_shared_buffer_t *buffer)
+int gamesh_add_surface_buffer(gamesh_shared_buffer_t *buffer)
 {
 	if (init_opcodes() < 0)
 		return -1;
-
-	gamesh_surface_add_t network_surface = {
-		.surface_id = surface_id,
-		.sdl_surface = *buffer->surface,
-	};
 
 	if (
 		send_fd(
 			SRV_FILENO,
 			gamesh_sdl_render_surface_buffer_add,
-			&network_surface,
-			sizeof(network_surface),
+			buffer->surface,
+			sizeof(*buffer->surface),
 			buffer->shmem_fd
 		) < 0
 	) {
@@ -334,40 +328,27 @@ int gamesh_add_surface_buffer(int surface_id, gamesh_shared_buffer_t *buffer)
 	return result;
 }
 
-gamesh_recv_buffer_t gamesh_recv_shared_buffer(
+gamesh_shared_buffer_t *gamesh_recv_shared_buffer(
 	int opcode,
 	void *buffer,
 	int length,
 	struct msghdr header
 )
 {
-	static const gamesh_recv_buffer_t error_return = {
-		.surface_id = -1,
-		.buffer = NULL,
-	};
-
 	int shmem_fd = get_fd(header);
 
 	const bool error = opcode != gamesh_sdl_render_surface_buffer_add
-		|| length < sizeof(gamesh_recv_buffer_t);
+		|| length < sizeof(SDL_Surface);
 
 	if (error)
-		return error_return;
+		return NULL;
 
-	gamesh_surface_add_t *network = buffer;
+	SDL_Surface *network = buffer;
 
-	gamesh_shared_buffer_t *result = create_shared_buffer_from(
+	return create_shared_buffer_from(
 		shmem_fd,
-		&network->sdl_surface
+		network
 	);
-
-	if (!result)
-		return error_return;
-
-	return (gamesh_recv_buffer_t) {
-		.surface_id = network->surface_id,
-		.buffer = result,
-	};
 }
 
 SDL_Surface *gamesh_get_shared_buffer_surface(gamesh_shared_buffer_t *buffer)

@@ -21,8 +21,10 @@ int main(int argc, char **argv)
 		SDL_LoadPNG(argv[1]),
 		SDL_LoadPNG(argv[2]),
 	};
-	if (!(local_pngs[0] && local_pngs[1]))
+	if (!local_pngs[0])
 		perror_exit("Couldn't find %s", argv[1]);
+	if (!local_pngs[1])
+		perror_exit("Couldn't find %s", argv[2]);
 
 	gamesh_shared_buffer_t *shared_pngs[] = {
 		gamesh_create_shared_buffer(local_pngs[0]),
@@ -36,17 +38,17 @@ int main(int argc, char **argv)
 
 	// the first buffer_id added will automatically be shown
 	int buffer_ids[] = {
-		gamesh_add_surface_buffer(surface_id, shared_pngs[0]),
-		gamesh_add_surface_buffer(surface_id, shared_pngs[1]),
+		gamesh_add_surface_buffer(shared_pngs[0]),
+		gamesh_add_surface_buffer(shared_pngs[1]),
 	};
 
 	int current = 0;
 	while (1) {
+		if (gamesh_set_surface_buffer(surface_id, buffer_ids[current]) < 0)
+			break;
+
 		sleep(1);
 
 		current = !current;
-
-		if (gamesh_set_surface_buffer(surface_id, buffer_ids[current]) < 0)
-			break;
 	}
 }

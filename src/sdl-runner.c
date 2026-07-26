@@ -21,6 +21,9 @@ typedef struct libadt_vector vec_t;
 #define ARRLENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
 
 #define index libadt_vector_index
+#define get_buffer_surface gamesh_get_shared_buffer_surface
+
+typedef gamesh_shared_buffer_t buffer_t;
 
 // I should probably add some inline functions like this in libadt..
 static int append(vec_t *vec, void *data)
@@ -45,26 +48,35 @@ vec_t gamepad_event_listeners = { .size = sizeof(int) };
 vec_t quit_event_listeners = { .size = sizeof(int) };
 
 typedef struct {
-	vec_t buffers;
-	int active_buffer;
 	SDL_Texture *texture;
+	int active_buffer;
 } surface_t;
+
+typedef struct {
+	vec_t surfaces;
+	vec_t buffers;
+} client_t;
+
+vec_t clients = { .size = sizeof(client_t) };
 
 vec_t render_surfaces = { .size = sizeof(vec_t) };
 
-SDL_AppResult init_render_surfaces(void)
+SDL_AppResult init_clients(void)
 {
-	render_surfaces = libadt_vector_init(sizeof(vec_t), cli_count());
+	render_surfaces = libadt_vector_init(sizeof(client_t), cli_count());
 	if (!render_surfaces.capacity) {
 		SDL_Log("Couldn't initialize surfaces vector");
 		return SDL_APP_FAILURE;
 	}
 
 	for (int i = 0; i < cli_count(); i++) {
-		vec_t client_surfaces = { .size = sizeof(surface_t) };
-		if (append(&render_surfaces, &client_surfaces) < 0) {
+		client_t client = {
+			.surfaces = { .size = sizeof(surface_t) },
+			.buffers = { .size = sizeof(buffer_t*) },
+		};
+		if (append(&clients, &client) < 0) {
 			// This should never happen, but e.
-			SDL_Log("Appending client surfaces failed");
+			SDL_Log("Appending client buffer/surface data failed");
 			return SDL_APP_FAILURE;
 		}
 	}
@@ -72,29 +84,46 @@ SDL_AppResult init_render_surfaces(void)
 	return SDL_APP_CONTINUE;
 }
 
-static vec_t *get_client_surfaces(int fd)
+static client_t *get_client(int fd)
 {
-	if (render_surfaces.length <= fd - CLI_BEGIN)
-		return NULL;
-	return index(render_surfaces, fd - CLI_BEGIN);
-}
-
-static surface_t *get_surface(vec_t *surfaces, int surface_id)
-{
-	if (surfaces->length <= surface_id)
-		return NULL;
-	return index(*surfaces, surface_id);
-}
-
-static gamesh_shared_buffer_t *get_buffer(surface_t surface, int i)
-{
-	bool error = i < 0
-		|| surface.buffers.length <= i;
+	const int i = fd - CLI_BEGIN;
+	const bool error = i < 0
+		|| clients.length <= i;
 
 	if (error)
 		return NULL;
 
-	return *(gamesh_shared_buffer_t**)index(surface.buffers, i);
+	return index(clients, i);
+}
+
+static surface_t *get_surface(int fd, int surface_id)
+{
+	client_t *client = get_client(fd);
+	if (!client)
+		return NULL;
+
+	const bool error = surface_id < 0
+		|| client->surfaces.length <= surface_id;
+
+	if (error)
+		return NULL;
+
+	return index(client->surfaces, surface_id);
+}
+
+static buffer_t *get_buffer(int fd, int buffer_id)
+{
+	client_t *client = get_client(fd);
+	if (!client)
+		return NULL;
+
+	const bool error = buffer_id < 0
+		|| client->buffers.length <= buffer_id;
+
+	if (error)
+		return NULL;
+
+	return *(buffer_t**)index(client->buffers, buffer_id);
 }
 
 #define MESSAGE_TYPES(OPERATION) \
@@ -163,9 +192,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 
 	close_opcode_db(db);
 
-	SDL_AppResult init_render_surfaces_result = init_render_surfaces();
-	if (init_render_surfaces_result != SDL_APP_CONTINUE)
-		return init_render_surfaces_result;
+	SDL_AppResult init_clients_result = init_clients();
+	if (init_clients_result != SDL_APP_CONTINUE)
+		return init_clients_result;
 
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
 		SDL_Log("Couldn't initialize video/joystick: %s", SDL_GetError());
@@ -281,22 +310,18 @@ static int handle_new_listener(int fd, int *opcodes, int count)
 static int handle_new_surface(int fd)
 {
 	surface_t surface = {
-		.buffers = {
-			.size = sizeof(gamesh_shared_buffer_t*),
-		},
-		.active_buffer = 0,
 		.texture = NULL,
+		.active_buffer = 0,
 	};
 
-	vec_t *surfaces = get_client_surfaces(fd);
-	if (!surfaces)
-		// should never happen, so if it does something's seriously wrong
+	client_t *client = get_client(fd);
+	if (!client)
 		return -1;
 
-	if (append(surfaces, &surface) < 0) {
+	if (append(&client->surfaces, &surface) < 0)
 		return -1;
-	}
-	return surfaces->length - 1;
+
+	return client->surfaces.length - 1;
 }
 
 static int update_texture(SDL_Surface *surface, SDL_Texture *texture)
@@ -310,37 +335,21 @@ static int update_texture(SDL_Surface *surface, SDL_Texture *texture)
 	return result ? 0 : -1;
 }
 
-static int handle_new_surface_buffer(int fd, gamesh_recv_buffer_t recv_buffer)
+static int handle_new_surface_buffer(int fd, buffer_t *recv_buffer)
 {
-	const bool error = recv_buffer.surface_id < 0
-		|| recv_buffer.buffer == NULL;
+	const bool error = recv_buffer == NULL;
 
 	if (error)
 		return -1;
 
-	vec_t *surfaces = get_client_surfaces(fd);
-	if (!surfaces)
+	client_t *client = get_client(fd);
+	if (!client)
 		return -1;
 
-	surface_t *surface = get_surface(surfaces, recv_buffer.surface_id);
-	if (!surface)
+	if (append(&client->buffers, &recv_buffer) < 0)
 		return -1;
 
-	if (append(&surface->buffers, &recv_buffer.buffer) < 0)
-		return -1;
-
-	if (surface->texture == NULL) {
-		SDL_Surface *buffer = gamesh_get_shared_buffer_surface(recv_buffer.buffer);
-		surface->texture = SDL_CreateTexture(
-			renderer,
-			buffer->format,
-			SDL_TEXTUREACCESS_STREAMING,
-			buffer->w,
-			buffer->h
-		);
-	}
-
-	return surface->buffers.length - 1;
+	return client->buffers.length - 1;
 }
 
 int handle_swap_surface(int fd, int *ids, int size)
@@ -351,19 +360,30 @@ int handle_swap_surface(int fd, int *ids, int size)
 	int surface_id = ids[0];
 	int buffer_id = ids[1];
 
-	vec_t *surfaces = get_client_surfaces(fd);
-	if (!surfaces)
-		return -1;
-
-	surface_t *surface = get_surface(surfaces, surface_id);
+	surface_t *surface = get_surface(fd, surface_id);
 	if (!surface)
 		return -1;
 
-	gamesh_shared_buffer_t *buffer = get_buffer(*surface, buffer_id);
+	buffer_t *shared_buffer = get_buffer(fd, buffer_id);
+	if (!shared_buffer)
+		return -1;
+
+	SDL_Surface *buffer = gamesh_get_shared_buffer_surface(shared_buffer);
 	if (!buffer)
 		return -1;
 
 	surface->active_buffer = buffer_id;
+
+	if (!surface->texture) {
+		surface->texture = SDL_CreateTexture(
+			renderer,
+			buffer->format,
+			SDL_TEXTUREACCESS_STREAMING,
+			buffer->w,
+			buffer->h
+		);
+	}
+
 	return 0;
 }
 
@@ -392,7 +412,7 @@ static void handle_requests(
 			return;
 		}
 	} else if (opcode == gamesh_sdl_render_surface_buffer_add) {
-		gamesh_recv_buffer_t recv_buffer = gamesh_recv_shared_buffer(
+		buffer_t *recv_buffer = gamesh_recv_shared_buffer(
 			opcode,
 			buffer,
 			size,
@@ -433,20 +453,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 	} while (last.revents && !(last.revents & POLLIN) && keep_running);
 
 	for (int i = CLI_BEGIN; i < cli_end(); i++) {
-		vec_t *client_surfaces = get_client_surfaces(i);
-
-		for (int j = 0; j < client_surfaces->length; j++) {
-			surface_t *surface = get_surface(client_surfaces, j);
+		client_t *client = get_client(i);
+		for (int j = 0; j < client->surfaces.length; j++) {
+			surface_t *surface = index(client->surfaces, j);
 			if (surface->texture) {
-				gamesh_shared_buffer_t *buffer = get_buffer(*surface, surface->active_buffer);
-				if (!buffer)
-					continue;
+				buffer_t *shared_buffer
+					= get_buffer(i, surface->active_buffer);
 
-				// probably some logic for "skip if buffer swapped"
-				if (update_texture(gamesh_get_shared_buffer_surface(buffer), surface->texture) < 0) {
-					SDL_Log("Couldn't update texture: %s", SDL_GetError());
+				if (update_texture(get_buffer_surface(shared_buffer), surface->texture) < 0)
 					continue;
-				}
 
 				SDL_RenderTexture(renderer, surface->texture, NULL, NULL);
 			}
