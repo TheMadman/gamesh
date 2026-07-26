@@ -94,6 +94,8 @@ static int init_opcodes(void)
 		if (*current->destination == -1) {
 			if (!db)
 				db = open_opcode_db();
+			if (!db)
+				return -1;
 
 			*current->destination = get_opcode(db, current->message);
 			if (*current->destination == -1)
