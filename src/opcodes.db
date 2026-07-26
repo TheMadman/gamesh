@@ -9,4 +9,4 @@ gamesh_sdl_event_gamepad
 
 gamesh_sdl_render_surface
 gamesh_sdl_render_surface_buffer_add
-gamesh_sdl_render_surface_buffer_swap
+gamesh_sdl_render_surface_buffer_set

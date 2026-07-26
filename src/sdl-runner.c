@@ -134,7 +134,7 @@ static buffer_t *get_buffer(int fd, int buffer_id)
 	OPERATION(gamesh_sdl_event_gamepad) \
 	OPERATION(gamesh_sdl_render_surface) \
 	OPERATION(gamesh_sdl_render_surface_buffer_add) \
-	OPERATION(gamesh_sdl_render_surface_buffer_swap)
+	OPERATION(gamesh_sdl_render_surface_buffer_set)
 
 #define CREATE_GLOBAL(MESSAGE_TYPE) int MESSAGE_TYPE = -1;
 MESSAGE_TYPES(CREATE_GLOBAL)
@@ -428,10 +428,10 @@ static void handle_requests(
 			);
 			return;
 		}
-	} else if (opcode == gamesh_sdl_render_surface_buffer_swap) {
+	} else if (opcode == gamesh_sdl_render_surface_buffer_set) {
 		int result = handle_swap_surface(fd, buffer, size);
 		if (-1 < result) {
-			writeop(fd, gamesh_sdl_render_surface_buffer_swap, NULL, 0);
+			writeop(fd, gamesh_sdl_render_surface_buffer_set, NULL, 0);
 			return;
 		}
 	}

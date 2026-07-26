@@ -14,7 +14,7 @@
 	OPERATION(gamesh_event_listen_op) \
 	OPERATION(gamesh_sdl_render_surface) \
 	OPERATION(gamesh_sdl_render_surface_buffer_add) \
-	OPERATION(gamesh_sdl_render_surface_buffer_swap)
+	OPERATION(gamesh_sdl_render_surface_buffer_set)
 
 
 #define DECLARE_INT(MESSAGE) int MESSAGE = -1;
@@ -368,7 +368,7 @@ void set_surface_buffer_response(
 )
 {
 	int *result = context;
-	if (opcode == gamesh_sdl_render_surface_buffer_swap)
+	if (opcode == gamesh_sdl_render_surface_buffer_set)
 		*result = 0;
 }
 
@@ -376,7 +376,7 @@ int gamesh_set_surface_buffer(int surface_id, int buffer_id)
 {
 	int ids[] = { surface_id, buffer_id };
 
-	if (writesrv(gamesh_sdl_render_surface_buffer_swap, ids, sizeof(ids)) < 0)
+	if (writesrv(gamesh_sdl_render_surface_buffer_set, ids, sizeof(ids)) < 0)
 		return -1;
 
 	int result = -1;
