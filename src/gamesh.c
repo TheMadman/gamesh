@@ -306,7 +306,7 @@ static void add_surface_buffer_response(
 	*result = *(int*)data;
 }
 
-int gamesh_add_surface_buffer(gamesh_shared_buffer_t *buffer)
+int gamesh_add_buffer(gamesh_shared_buffer_t *buffer)
 {
 	if (init_opcodes() < 0)
 		return -1;

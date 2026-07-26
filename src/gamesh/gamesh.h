@@ -117,13 +117,13 @@ void gamesh_destroy_shared_buffer(gamesh_shared_buffer_t *buffer);
  * \returns A buffer_id that is unique for this surface_id, or -1 on
  * 	failure.
  */
-int gamesh_add_surface_buffer(gamesh_shared_buffer_t *buffer);
+int gamesh_add_buffer(gamesh_shared_buffer_t *buffer);
 
 /**
  * \brief Sets the buffer to use as the current active buffer.
  *
  * \param surface_id An ID returned by gamesh_create_render_surface().
- * \param buffer An ID returned by gamesh_add_surface_buffer().
+ * \param buffer An ID returned by gamesh_add_buffer().
  *
  * \returns 0 on success, -1 on failure.
  */
