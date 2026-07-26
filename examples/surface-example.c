@@ -7,7 +7,7 @@
 	printf("%s:%d ", __FILE__, __LINE__),\
 	printf(__VA_ARGS__),\
 	putchar('\n'), \
-	exit(EXIT_FAILURE);
+	exit(EXIT_FAILURE)
 
 int main(int argc, char **argv)
 {
