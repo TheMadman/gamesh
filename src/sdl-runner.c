@@ -86,6 +86,17 @@ static surface_t *get_surface(vec_t *surfaces, int surface_id)
 	return index(*surfaces, surface_id);
 }
 
+static gamesh_shared_buffer_t *get_buffer(surface_t surface, int i)
+{
+	bool error = i < 0
+		|| surface.buffers.length <= i;
+
+	if (error)
+		return NULL;
+
+	return *(gamesh_shared_buffer_t**)index(surface.buffers, i);
+}
+
 #define MESSAGE_TYPES(OPERATION) \
 	OPERATION(gamesh_event_listen_op) \
 	OPERATION(gamesh_sdl_event_quit) \
@@ -332,6 +343,30 @@ static int handle_new_surface_buffer(int fd, gamesh_recv_buffer_t recv_buffer)
 	return surface->buffers.length - 1;
 }
 
+int handle_swap_surface(int fd, int *ids, int size)
+{
+	if (size < sizeof(int[2]))
+		return -1;
+
+	int surface_id = ids[0];
+	int buffer_id = ids[1];
+
+	vec_t *surfaces = get_client_surfaces(fd);
+	if (!surfaces)
+		return -1;
+
+	surface_t *surface = get_surface(surfaces, surface_id);
+	if (!surface)
+		return -1;
+
+	gamesh_shared_buffer_t *buffer = get_buffer(*surface, buffer_id);
+	if (!buffer)
+		return -1;
+
+	surface->active_buffer = buffer_id;
+	return 0;
+}
+
 static void handle_requests(
 	int fd,
 	int opcode,
@@ -373,21 +408,16 @@ static void handle_requests(
 			);
 			return;
 		}
+	} else if (opcode == gamesh_sdl_render_surface_buffer_swap) {
+		int result = handle_swap_surface(fd, buffer, size);
+		if (-1 < result) {
+			writeop(fd, gamesh_sdl_render_surface_buffer_swap, NULL, 0);
+			return;
+		}
 	}
 
 	// error case
 	writeop(fd, error_opcode, NULL, 0);
-}
-
-static gamesh_shared_buffer_t *get_buffer(surface_t surface, int i)
-{
-	bool error = i < 0
-		|| surface.buffers.length <= i;
-
-	if (error)
-		return NULL;
-
-	return *(gamesh_shared_buffer_t**)index(surface.buffers, i);
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate)

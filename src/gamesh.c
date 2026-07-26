@@ -375,3 +375,29 @@ SDL_Surface *gamesh_get_shared_buffer_surface(gamesh_shared_buffer_t *buffer)
 	return buffer->surface;
 }
 
+void set_surface_buffer_response(
+	int fd,
+	int opcode,
+	void *data,
+	int length,
+	struct msghdr header,
+	void *context
+)
+{
+	int *result = context;
+	if (opcode == gamesh_sdl_render_surface_buffer_swap)
+		*result = 0;
+}
+
+int gamesh_set_surface_buffer(int surface_id, int buffer_id)
+{
+	int ids[] = { surface_id, buffer_id };
+
+	if (writesrv(gamesh_sdl_render_surface_buffer_swap, ids, sizeof(ids)) < 0)
+		return -1;
+
+	int result = -1;
+	pollopsrv(set_surface_buffer_response, &result, -1);
+	return result;
+}
+
