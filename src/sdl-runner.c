@@ -371,6 +371,7 @@ static void handle_requests(
 				&result,
 				sizeof(result)
 			);
+			return;
 		}
 	}
 
@@ -411,7 +412,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 				if (!buffer)
 					continue;
 
-				// probably some logic for "skip if active buffer == last active buffer"
+				// probably some logic for "skip if buffer swapped"
 				if (update_texture(gamesh_get_shared_buffer_surface(buffer), surface->texture) < 0) {
 					SDL_Log("Couldn't update texture: %s", SDL_GetError());
 					continue;
