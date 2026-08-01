@@ -11,7 +11,7 @@ bool keep_running = true;
 
 #define ARRLEN(ARRAY) (sizeof(ARRAY) / sizeof(ARRAY[0]))
 
-#define PERROR_EXIT(MESSAGE) perror(MESSAGE), exit(EXIT_FAILURE)
+#define PERROR_EXIT(MESSAGE) fprintf(stderr, "%s:%d ", __FILE__, __LINE__), perror(MESSAGE), exit(EXIT_FAILURE)
 
 #define EVENT_TYPES(OPERATION) \
 	OPERATION(SDL_EVENT_KEY_DOWN) \

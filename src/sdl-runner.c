@@ -46,6 +46,7 @@ vec_t keyboard_event_listeners = { .size = sizeof(int) };
 vec_t mouse_event_listeners = { .size = sizeof(int) };
 vec_t gamepad_event_listeners = { .size = sizeof(int) };
 vec_t quit_event_listeners = { .size = sizeof(int) };
+vec_t tick_event_listeners = { .size = sizeof(int) };
 
 typedef struct {
 	SDL_Texture *texture;
@@ -132,6 +133,7 @@ static buffer_t *get_buffer(int fd, int buffer_id)
 	OPERATION(gamesh_sdl_event_keyboard) \
 	OPERATION(gamesh_sdl_event_mouse) \
 	OPERATION(gamesh_sdl_event_gamepad) \
+	OPERATION(gamesh_sdl_event_tick) \
 	OPERATION(gamesh_sdl_render_surface) \
 	OPERATION(gamesh_sdl_render_surface_buffer_add) \
 	OPERATION(gamesh_sdl_render_surface_buffer_set)
@@ -220,6 +222,7 @@ vec_t *vec_for_opcode(int opcode)
 		: opcode == gamesh_sdl_event_mouse ? &mouse_event_listeners
 		: opcode == gamesh_sdl_event_gamepad ? &gamepad_event_listeners
 		: opcode == gamesh_sdl_event_quit ? &quit_event_listeners
+		: opcode == gamesh_sdl_event_tick ? &tick_event_listeners
 		: NULL;
 }
 
@@ -468,6 +471,17 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 		}
 	}
 	SDL_RenderPresent(renderer);
+
+	for (int i = 0; i < tick_event_listeners.length; i++) {
+		int *event_fd = index(tick_event_listeners, i);
+		Uint64 current_tick = SDL_GetTicks();
+		writeop(
+			*event_fd,
+			gamesh_sdl_event_tick,
+			&current_tick,
+			sizeof(current_tick)
+		);
+	}
 
 	return result;
 }

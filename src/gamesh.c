@@ -14,7 +14,8 @@
 	OPERATION(gamesh_event_listen_op) \
 	OPERATION(gamesh_sdl_render_surface) \
 	OPERATION(gamesh_sdl_render_surface_buffer_add) \
-	OPERATION(gamesh_sdl_render_surface_buffer_set)
+	OPERATION(gamesh_sdl_render_surface_buffer_set) \
+	OPERATION(gamesh_sdl_event_tick)
 
 
 #define DECLARE_INT(MESSAGE) int MESSAGE = -1;
@@ -384,3 +385,64 @@ int gamesh_set_surface_buffer(int surface_id, int buffer_id)
 	return result;
 }
 
+int gamesh_get_tick_fd(void)
+{
+	if (init_opcodes() < 0)
+		return -1;
+	return gamesh_event_listen(gamesh_sdl_event_tick);
+}
+
+static void get_tick_nonblocking(
+	int fd,
+	int opcode,
+	void *buffer,
+	int size,
+	struct msghdr header,
+	void *context
+)
+{
+	uint64_t *result = context;
+	const bool error = opcode != gamesh_sdl_event_tick
+		|| size != sizeof(uint64_t);
+
+	if (error) {
+		*result = (uint64_t)-1;
+		return;
+	}
+
+	*result = *(uint64_t*)buffer;
+}
+
+static void get_tick_blocking(
+	int fd,
+	int opcode,
+	void *buffer,
+	int size,
+	struct msghdr header,
+	void *context
+)
+{
+	struct pollfd pollfd = { .fd = fd };
+	uint64_t *result = context;
+	const bool error = opcode != gamesh_sdl_event_tick
+		|| size != sizeof(uint64_t);
+
+	if (error) {
+		*result = (uint64_t)-1;
+		return;
+	}
+
+	*result = *(uint64_t*)buffer;
+
+	do {
+		pollfd = pollopfd(pollfd, get_tick_nonblocking, context, 0);
+	} while (pollfd.revents & POLLIN);
+}
+
+uint64_t gamesh_get_tick(int tick_fd)
+{
+	uint64_t result = -1;
+	struct pollfd pollfd = { .fd = tick_fd };
+	pollopfd(pollfd, get_tick_blocking, &result, -1);
+	return result;
+}

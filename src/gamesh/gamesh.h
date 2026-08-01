@@ -30,6 +30,7 @@ extern "C" {
 #include <stddef.h>
 #include <SDL3/SDL.h>
 #include <sys/socket.h>
+#include <stdint.h>
 
 typedef struct gamesh_shared_buffer_s gamesh_shared_buffer_t;
 
@@ -147,6 +148,26 @@ gamesh_shared_buffer_t *gamesh_recv_shared_buffer(
 	int length,
 	struct msghdr header
 );
+
+/**
+ * \brief Returns a file descriptor that provides game
+ * 	ticks.
+ *
+ * \returns a file descriptor returning game tick events,
+ * 	or -1 on failure.
+ */
+int gamesh_get_tick_fd(void);
+
+/**
+ * \brief Blocks on an event file descriptor produced
+ * 	by gamesh_get_tick_fd().
+ *
+ * \param tick_fd An event file descriptor returned by
+ * 	gamesh_get_tick_fd().
+ * \returns A 64-bit integer representing milliseconds
+ * 	since runner start, or (uint64_t)-1 on failure.
+ */
+uint64_t gamesh_get_tick(int tick_fd);
 
 #ifdef __cplusplus
 } // extern "C"
