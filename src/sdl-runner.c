@@ -51,6 +51,7 @@ vec_t tick_event_listeners = { .size = sizeof(int) };
 typedef struct {
 	SDL_Texture *texture;
 	int active_buffer;
+	int changed;
 } surface_t;
 
 typedef struct {
@@ -376,6 +377,7 @@ int handle_swap_surface(int fd, int *ids, int size)
 		return -1;
 
 	surface->active_buffer = buffer_id;
+	surface->changed = 1;
 
 	if (!surface->texture) {
 		surface->texture = SDL_CreateTexture(
@@ -445,9 +447,6 @@ static void handle_requests(
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
-	SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
-	SDL_RenderClear(renderer);
-
 	SDL_AppResult result = SDL_APP_CONTINUE;
 
 	struct pollfd last = { 0 };
@@ -459,14 +458,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 		client_t *client = get_client(i);
 		for (int j = 0; j < client->surfaces.length; j++) {
 			surface_t *surface = index(client->surfaces, j);
+
 			if (surface->texture) {
 				buffer_t *shared_buffer
 					= get_buffer(i, surface->active_buffer);
 
-				if (update_texture(get_buffer_surface(shared_buffer), surface->texture) < 0)
-					continue;
+				if (surface->changed) {
+					if (update_texture(get_buffer_surface(shared_buffer), surface->texture) < 0)
+						continue;
+					surface->changed = 0;
+				}
 
 				SDL_RenderTexture(renderer, surface->texture, NULL, NULL);
+
+				surface->changed = 0;
 			}
 		}
 	}
