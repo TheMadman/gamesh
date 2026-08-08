@@ -9,4 +9,5 @@ file(COPY images DESTINATION .)
 
 example(keyboard-example)
 example(surface-example)
+example(animation-example)
 example(tick-example)

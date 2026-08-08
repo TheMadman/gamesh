@@ -2,6 +2,7 @@
 
 sdl-runner {
 	examples/keyboard-example
-	examples/surface-example examples/images/hello-gamesh.png examples/images/goodbye-gamesh.png
-	examples/tick-example
+	examples/animation-example examples/images/hello-gamesh.png examples/images/goodbye-gamesh.png
+	examples/surface-example examples/images/smile.png
+	# examples/tick-example
 }

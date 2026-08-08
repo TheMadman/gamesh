@@ -23,6 +23,8 @@ typedef struct libadt_vector vec_t;
 #define index libadt_vector_index
 #define get_buffer_surface gamesh_get_shared_buffer_surface
 
+#define MAX libadt_util_max
+
 typedef gamesh_shared_buffer_t buffer_t;
 
 // I should probably add some inline functions like this in libadt..
@@ -35,8 +37,9 @@ static int append(vec_t *vec, void *data)
 	return 0;
 }
 
-SDL_Window *window;
-SDL_Renderer *renderer;
+SDL_Window *window = NULL;
+SDL_Renderer *renderer = NULL;
+const char *window_title = NULL;
 
 int error_opcode = -1;
 int event_fd = -1;
@@ -173,49 +176,6 @@ static int get_fd(struct msghdr header)
 	return result;
 }
 
-SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
-{
-	opcode_db *db = open_opcode_db();
-	if (!db) {
-		SDL_Log("Failed to open opcodedb");
-		return SDL_APP_FAILURE;
-	}
-	static const message_opcode emit_opcodes[] = {
-		MESSAGE_TYPES(CREATE_STRUCT)
-		{ 0 },
-	};
-
-	for (const message_opcode *current = emit_opcodes; current->destination; current++) {
-		*current->destination = get_opcode(db, current->name);
-		if (*current->destination < 0) {
-			SDL_Log("Failed to load opcode %s", current->name);
-			return SDL_APP_FAILURE;
-		}
-	}
-
-	close_opcode_db(db);
-
-	SDL_AppResult init_clients_result = init_clients();
-	if (init_clients_result != SDL_APP_CONTINUE)
-		return init_clients_result;
-
-	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
-		SDL_Log("Couldn't initialize video/joystick: %s", SDL_GetError());
-		return SDL_APP_FAILURE;
-	}
-
-	if (!(window = SDL_CreateWindow("some-string", DEFAULT_WIDTH, DEFAULT_HEIGHT, 0))) {
-		SDL_Log("Couldn't create window: %s", SDL_GetError());
-		return SDL_APP_FAILURE;
-	}
-
-	if (!(renderer = SDL_CreateRenderer(window, NULL))) {
-		SDL_Log("Couldn't create renderer: %s", SDL_GetError());
-		return SDL_APP_FAILURE;
-	}
-
-	return SDL_APP_CONTINUE;
-}
 
 vec_t *vec_for_opcode(int opcode)
 {
@@ -356,7 +316,7 @@ static int handle_new_surface_buffer(int fd, buffer_t *recv_buffer)
 	return client->buffers.length - 1;
 }
 
-int handle_swap_surface(int fd, int *ids, int size)
+int handle_set_surface_buffer(int fd, int *ids, int size)
 {
 	if (size < sizeof(int[2]))
 		return -1;
@@ -379,6 +339,23 @@ int handle_swap_surface(int fd, int *ids, int size)
 	surface->active_buffer = buffer_id;
 	surface->changed = 1;
 
+	if (!renderer) {
+		if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
+			SDL_Log("Couldn't initialize video/joystick: %s", SDL_GetError());
+			return SDL_APP_FAILURE;
+		}
+
+		if (!(window = SDL_CreateWindow(window_title, buffer->w, buffer->h, 0))) {
+			SDL_Log("Couldn't create window: %s", SDL_GetError());
+			return SDL_APP_FAILURE;
+		}
+
+		if (!(renderer = SDL_CreateRenderer(window, NULL))) {
+			SDL_Log("Couldn't create renderer: %s", SDL_GetError());
+			return SDL_APP_FAILURE;
+		}
+	}
+
 	if (!surface->texture) {
 		surface->texture = SDL_CreateTexture(
 			renderer,
@@ -387,6 +364,21 @@ int handle_swap_surface(int fd, int *ids, int size)
 			buffer->w,
 			buffer->h
 		);
+	}
+
+	int window_w = 0, window_h = 0;
+	if (!SDL_GetWindowSize(window, &window_w, &window_h)) {
+		SDL_Log("Couldn't get window size: %s", SDL_GetError());
+		return SDL_APP_FAILURE;
+	}
+
+	if (window_w < buffer->w || window_h < buffer->h) {
+		int new_w = MAX(buffer->w, window_w);
+		int new_h = MAX(buffer->h, window_h);
+		if (!SDL_SetWindowSize(window, new_w, new_h)) {
+			SDL_Log("Couldn't set new window size: %s", SDL_GetError());
+			return SDL_APP_FAILURE;
+		}
 	}
 
 	return 0;
@@ -434,7 +426,7 @@ static void handle_requests(
 			return;
 		}
 	} else if (opcode == gamesh_sdl_render_surface_buffer_set) {
-		int result = handle_swap_surface(fd, buffer, size);
+		int result = handle_set_surface_buffer(fd, buffer, size);
 		if (-1 < result) {
 			writeop(fd, gamesh_sdl_render_surface_buffer_set, NULL, 0);
 			return;
@@ -489,6 +481,51 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 	}
 
 	return result;
+}
+
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
+{
+	opcode_db *db = open_opcode_db();
+	if (!db) {
+		SDL_Log("Failed to open opcodedb");
+		return SDL_APP_FAILURE;
+	}
+	static const message_opcode emit_opcodes[] = {
+		MESSAGE_TYPES(CREATE_STRUCT)
+		{ 0 },
+	};
+
+	for (const message_opcode *current = emit_opcodes; current->destination; current++) {
+		*current->destination = get_opcode(db, current->name);
+		if (*current->destination < 0) {
+			SDL_Log("Failed to load opcode %s", current->name);
+			return SDL_APP_FAILURE;
+		}
+	}
+
+	close_opcode_db(db);
+
+	SDL_AppResult init_clients_result = init_clients();
+	if (init_clients_result != SDL_APP_CONTINUE)
+		return init_clients_result;
+
+	if (argc < 2)
+		window_title = "SDL Runner";
+	else
+		window_title = argv[1];
+
+	SDL_AppResult result = SDL_APP_CONTINUE;
+	struct pollfd last = { 0 };
+	do {
+		last = pollop(handle_requests, &result, 0);
+	} while (
+		last.revents
+		&& !(last.revents & POLLIN)
+		&& keep_running
+		&& !window
+	);
+
+	return SDL_APP_CONTINUE;
 }
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result)
