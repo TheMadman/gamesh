@@ -9,5 +9,8 @@ gamesh_sdl_event_gamepad
 gamesh_sdl_event_tick
 
 gamesh_sdl_render_surface
-gamesh_sdl_render_surface_buffer_add
-gamesh_sdl_render_surface_buffer_set
+gamesh_sdl_buffer_add
+gamesh_sdl_buffer_set
+gamesh_sdl_render_surface_position
+gamesh_sdl_render_surface_free
+gamesh_sdl_buffer_free

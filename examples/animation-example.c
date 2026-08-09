@@ -16,7 +16,8 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	argv++;
 
-	int surface_id = gamesh_create_render_surface();
+	// creates a surface at the top left of the window
+	int surface_id = gamesh_create_render_surface(0, 0);
 
 	gamesh_shared_buffer_t *shared_pngs[2] = { 0 };
 	int buffer_ids[2] = { -1, -1 };

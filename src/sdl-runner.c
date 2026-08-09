@@ -21,11 +21,36 @@ typedef struct libadt_vector vec_t;
 #define ARRLENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
 
 #define index libadt_vector_index
-#define get_buffer_surface gamesh_get_shared_buffer_surface
 
 #define MAX libadt_util_max
 
-typedef gamesh_shared_buffer_t buffer_t;
+typedef struct buffer_s buffer_t;
+
+typedef struct buffer_s {
+	int allocated;
+	union {
+		gamesh_shared_buffer_t *buffer;
+		buffer_t *next_free;
+	};
+} buffer_t;
+
+static SDL_Surface *get_buffer_surface(buffer_t *shared_buffer)
+{
+	return gamesh_get_shared_buffer_surface(shared_buffer->buffer);
+}
+
+static buffer_t *next_free_buffer(buffer_t *buffer)
+{
+	if (!buffer)
+		return NULL;
+	if (buffer->allocated)
+		return NULL;
+	if (!buffer->next_free)
+		return NULL;
+	if (buffer->next_free->allocated)
+		return NULL;
+	return buffer->next_free;
+}
 
 // I should probably add some inline functions like this in libadt..
 static int append(vec_t *vec, void *data)
@@ -51,15 +76,39 @@ vec_t gamepad_event_listeners = { .size = sizeof(int) };
 vec_t quit_event_listeners = { .size = sizeof(int) };
 vec_t tick_event_listeners = { .size = sizeof(int) };
 
-typedef struct {
-	SDL_Texture *texture;
-	int active_buffer;
-	int changed;
+typedef struct surface_s surface_t;
+typedef struct surface_s {
+	int allocated;
+	union {
+		struct {
+			SDL_Texture *texture;
+			int active_buffer;
+			int changed;
+			int x;
+			int y;
+		};
+		surface_t *next_free;
+	};
 } surface_t;
+
+static surface_t *next_free_surface(surface_t *surface)
+{
+	if (!surface)
+		return NULL;
+	if (surface->allocated)
+		return NULL;
+	if (!surface->next_free)
+		return NULL;
+	if (surface->next_free->allocated)
+		return NULL;
+	return surface->next_free;
+}
 
 typedef struct {
 	vec_t surfaces;
 	vec_t buffers;
+	void *surfaces_free;
+	void *buffers_free;
 } client_t;
 
 vec_t clients = { .size = sizeof(client_t) };
@@ -77,7 +126,7 @@ SDL_AppResult init_clients(void)
 	for (int i = 0; i < cli_count(); i++) {
 		client_t client = {
 			.surfaces = { .size = sizeof(surface_t) },
-			.buffers = { .size = sizeof(buffer_t*) },
+			.buffers = { .size = sizeof(buffer_t) },
 		};
 		if (append(&clients, &client) < 0) {
 			// This should never happen, but e.
@@ -113,7 +162,10 @@ static surface_t *get_surface(int fd, int surface_id)
 	if (error)
 		return NULL;
 
-	return index(client->surfaces, surface_id);
+	surface_t *result = index(client->surfaces, surface_id);
+	if (!result->allocated)
+		return NULL;
+	return result;
 }
 
 static buffer_t *get_buffer(int fd, int buffer_id)
@@ -128,7 +180,12 @@ static buffer_t *get_buffer(int fd, int buffer_id)
 	if (error)
 		return NULL;
 
-	return *(buffer_t**)index(client->buffers, buffer_id);
+	buffer_t *result = index(client->buffers, buffer_id);
+
+	if (!result->allocated)
+		return NULL;
+
+	return result;
 }
 
 #define MESSAGE_TYPES(OPERATION) \
@@ -139,8 +196,10 @@ static buffer_t *get_buffer(int fd, int buffer_id)
 	OPERATION(gamesh_sdl_event_gamepad) \
 	OPERATION(gamesh_sdl_event_tick) \
 	OPERATION(gamesh_sdl_render_surface) \
-	OPERATION(gamesh_sdl_render_surface_buffer_add) \
-	OPERATION(gamesh_sdl_render_surface_buffer_set)
+	OPERATION(gamesh_sdl_buffer_add) \
+	OPERATION(gamesh_sdl_buffer_set) \
+	OPERATION(gamesh_sdl_render_surface_free) \
+	OPERATION(gamesh_sdl_buffer_free)
 
 #define CREATE_GLOBAL(MESSAGE_TYPE) int MESSAGE_TYPE = -1;
 MESSAGE_TYPES(CREATE_GLOBAL)
@@ -271,16 +330,33 @@ static int handle_new_listener(int fd, int *opcodes, int count)
 	return result;
 }
 
-static int handle_new_surface(int fd)
+static int handle_new_surface(int fd, int *buffer, int size)
 {
+	if (size < sizeof(int[2]))
+		return -1;
+
 	surface_t surface = {
+		.allocated = true,
 		.texture = NULL,
 		.active_buffer = 0,
+		.x = buffer[0],
+		.y = buffer[1],
 	};
 
 	client_t *client = get_client(fd);
 	if (!client)
 		return -1;
+
+	surface_t *free = client->surfaces_free;
+	if (free) {
+		ssize_t index = free - (surface_t*)client->surfaces.buffer;
+		if (index < 0 || INT_MAX < index)
+			return -1;
+
+		client->surfaces_free = next_free_surface(client->surfaces_free);
+		*free = surface;
+		return (int)index;
+	}
 
 	if (append(&client->surfaces, &surface) < 0)
 		return -1;
@@ -299,7 +375,7 @@ static int update_texture(SDL_Surface *surface, SDL_Texture *texture)
 	return result ? 0 : -1;
 }
 
-static int handle_new_surface_buffer(int fd, buffer_t *recv_buffer)
+static int handle_new_buffer(int fd, gamesh_shared_buffer_t *recv_buffer)
 {
 	const bool error = recv_buffer == NULL;
 
@@ -310,7 +386,23 @@ static int handle_new_surface_buffer(int fd, buffer_t *recv_buffer)
 	if (!client)
 		return -1;
 
-	if (append(&client->buffers, &recv_buffer) < 0)
+	buffer_t result = {
+		.allocated = true,
+		.buffer = recv_buffer,
+	};
+
+	buffer_t *free = client->buffers_free;
+	if (free) {
+		ssize_t index = free - (buffer_t*)client->buffers.buffer;
+		if (index < 0 || INT_MAX < index)
+			return -1;
+
+		client->buffers_free = next_free_buffer(client->buffers_free);
+		*free = result;
+		return (int)index;
+	}
+
+	if (append(&client->buffers, &result) < 0)
 		return -1;
 
 	return client->buffers.length - 1;
@@ -332,7 +424,7 @@ int handle_set_surface_buffer(int fd, int *ids, int size)
 	if (!shared_buffer)
 		return -1;
 
-	SDL_Surface *buffer = gamesh_get_shared_buffer_surface(shared_buffer);
+	SDL_Surface *buffer = get_buffer_surface(shared_buffer);
 	if (!buffer)
 		return -1;
 
@@ -384,6 +476,46 @@ int handle_set_surface_buffer(int fd, int *ids, int size)
 	return 0;
 }
 
+static void handle_free_surface(int fd, int *surface_id, int size)
+{
+	if (size < sizeof(int))
+		return;
+
+	client_t *client = get_client(fd);
+	if (!client)
+		return;
+
+	surface_t *surface = get_surface(fd, *surface_id);
+	if (!surface)
+		return;
+
+	if (surface->texture)
+		SDL_DestroyTexture(surface->texture);
+
+	surface->allocated = false;
+	surface->next_free = client->surfaces_free;
+	client->surfaces_free = surface;
+}
+
+static void handle_free_buffer(int fd, int *buffer_id, int size)
+{
+	if (size < sizeof(int))
+		return;
+
+	client_t *client = get_client(fd);
+	if (!client)
+		return;
+
+	buffer_t *buffer = get_buffer(fd, *buffer_id);
+	if (!buffer)
+		return;
+
+	gamesh_destroy_shared_buffer(buffer->buffer);
+	buffer->allocated = false;
+	buffer->next_free = client->buffers_free;
+	client->buffers_free = buffer;
+}
+
 static void handle_requests(
 	int fd,
 	int opcode,
@@ -403,38 +535,64 @@ static void handle_requests(
 			return;
 		}
 	} else if (opcode == gamesh_sdl_render_surface) {
-		int result = handle_new_surface(fd);
+		int result = handle_new_surface(fd, buffer, size);
 		if (-1 < result) {
 			writeop(fd, gamesh_sdl_render_surface, &result, sizeof(result));
 			return;
 		}
-	} else if (opcode == gamesh_sdl_render_surface_buffer_add) {
-		buffer_t *recv_buffer = gamesh_recv_shared_buffer(
+	} else if (opcode == gamesh_sdl_buffer_add) {
+		gamesh_shared_buffer_t *recv_buffer = gamesh_recv_shared_buffer(
 			opcode,
 			buffer,
 			size,
 			header
 		);
-		int result = handle_new_surface_buffer(fd, recv_buffer);
+		int result = handle_new_buffer(fd, recv_buffer);
 		if (-1 < result) {
 			writeop(
 				fd,
-				gamesh_sdl_render_surface_buffer_add,
+				gamesh_sdl_buffer_add,
 				&result,
 				sizeof(result)
 			);
 			return;
 		}
-	} else if (opcode == gamesh_sdl_render_surface_buffer_set) {
+	} else if (opcode == gamesh_sdl_buffer_set) {
 		int result = handle_set_surface_buffer(fd, buffer, size);
 		if (-1 < result) {
-			writeop(fd, gamesh_sdl_render_surface_buffer_set, NULL, 0);
+			writeop(fd, gamesh_sdl_buffer_set, NULL, 0);
 			return;
 		}
+	} else if (opcode == gamesh_sdl_render_surface_free) {
+		handle_free_surface(fd, buffer, size);
+		return;
+	} else if (opcode == gamesh_sdl_buffer_free) {
+		handle_free_buffer(fd, buffer, size);
+		return;
 	}
 
 	// error case
 	writeop(fd, error_opcode, NULL, 0);
+}
+
+static SDL_FRect get_dest_rect(int x, int y, SDL_Surface *buffer)
+{
+	static const SDL_FRect error = { 0 };
+	int w = buffer->w, h = buffer->h;
+	int window_w, window_h;
+	if (!SDL_GetWindowSize(window, &window_w, &window_h))
+		return error;
+
+	if (x < 0)
+		x = x + 1 + window_w - w;
+	if (y < 0)
+		y = y + 1 + window_h - h;
+	return (SDL_FRect) {
+		.x = x,
+		.y = y,
+		.h = h,
+		.w = w,
+	};
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate)
@@ -454,14 +612,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 			if (surface->texture) {
 				buffer_t *shared_buffer
 					= get_buffer(i, surface->active_buffer);
+				SDL_Surface *buffer = get_buffer_surface(shared_buffer);
 
 				if (surface->changed) {
-					if (update_texture(get_buffer_surface(shared_buffer), surface->texture) < 0)
+					if (update_texture(buffer, surface->texture) < 0)
 						continue;
 					surface->changed = 0;
 				}
 
-				SDL_RenderTexture(renderer, surface->texture, NULL, NULL);
+				SDL_FRect dest = get_dest_rect(surface->x, surface->y, buffer);
+				SDL_RenderTexture(renderer, surface->texture, NULL, &dest);
 
 				surface->changed = 0;
 			}

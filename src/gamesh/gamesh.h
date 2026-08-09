@@ -66,11 +66,37 @@ int gamesh_event_listen(int opcode);
 void gamesh_event_close(int fd);
 
 /**
- * \brief Creates a new render surface.
+ * \brief Creates a new render surface at the given position.
+ *
+ * \param x How far the left edge of the surface is positioned
+ * 	from the left boundary in pixels. If `x` is negative,
+ * 	then the absolute value is how far the right edge is
+ * 	positioned from the right boundary in pixels.
+ * \param y How far the top edge of the surface is positioned
+ * 	from the top bounary in pixels. If `y` is negative,
+ * 	then the absolute value is how far the right edge is
+ * 	positioned from the right boundary in pixels.
  *
  * \returns -1 on error, a render surface ID on success.
  */
-int gamesh_create_render_surface();
+int gamesh_create_render_surface(int x, int y);
+
+/**
+ * \brief Repositions an existing surface.
+ *
+ * \param surface_id The surface_id as returned from
+ * 	gamesh_create_render_surface().
+ * \param x The new x position.
+ * \param y The new y position.
+ *
+ * \returns 0 on success, -1 on error.
+ */
+int gamesh_set_surface_position(int surface_id, int x, int y);
+
+/**
+ * \brief Frees the given surface.
+ */
+void gamesh_free_surface(int surface_id);
 
 /**
  * \brief Creates a new buffer, ready for sharing.
@@ -119,6 +145,11 @@ void gamesh_destroy_shared_buffer(gamesh_shared_buffer_t *buffer);
  * 	failure.
  */
 int gamesh_add_buffer(gamesh_shared_buffer_t *buffer);
+
+/**
+ * \brief Frees the given buffer.
+ */
+void gamesh_free_buffer(int buffer_id);
 
 /**
  * \brief Sets the buffer to use as the current active buffer.

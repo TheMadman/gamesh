@@ -13,8 +13,11 @@
 #define MESSAGE_LIST(OPERATION) \
 	OPERATION(gamesh_event_listen_op) \
 	OPERATION(gamesh_sdl_render_surface) \
-	OPERATION(gamesh_sdl_render_surface_buffer_add) \
-	OPERATION(gamesh_sdl_render_surface_buffer_set) \
+	OPERATION(gamesh_sdl_buffer_add) \
+	OPERATION(gamesh_sdl_buffer_set) \
+	OPERATION(gamesh_sdl_render_surface_position) \
+	OPERATION(gamesh_sdl_render_surface_free) \
+	OPERATION(gamesh_sdl_buffer_free) \
 	OPERATION(gamesh_sdl_event_tick)
 
 
@@ -167,7 +170,7 @@ int gamesh_event_listen(int opcode)
 	return gamesh_events_listen(&opcode, 1);
 }
 
-static void create_render_surface(
+static void handle_render_surface_response(
 	int fd,
 	int opcode,
 	void *data,
@@ -185,16 +188,18 @@ static void create_render_surface(
 	*(int*)context = *(int*)data;
 }
 
-int gamesh_create_render_surface()
+int gamesh_create_render_surface(int x, int y)
 {
 	if (init_opcodes() < 0)
 		return -1;
 
-	if (writesrv(gamesh_sdl_render_surface, NULL, 0) < 0)
+	int coords[2] = { x, y };
+
+	if (writesrv(gamesh_sdl_render_surface, coords, sizeof(coords)) < 0)
 		return -1;
 
 	int result = -1;
-	pollopsrv(create_render_surface, &result, -1);
+	pollopsrv(handle_render_surface_response, &result, -1);
 
 	return result;
 }
@@ -286,7 +291,7 @@ void gamesh_destroy_shared_buffer(gamesh_shared_buffer_t *buffer)
 	free(buffer);
 }
 
-static void add_surface_buffer_response(
+static void add_buffer_response(
 	int fd,
 	int opcode,
 	void *data,
@@ -296,7 +301,7 @@ static void add_surface_buffer_response(
 )
 {
 	int *result = context;
-	const bool error = opcode != gamesh_sdl_render_surface_buffer_add
+	const bool error = opcode != gamesh_sdl_buffer_add
 		|| length != sizeof(int);
 
 	if (error) {
@@ -315,7 +320,7 @@ int gamesh_add_buffer(gamesh_shared_buffer_t *buffer)
 	if (
 		send_fd(
 			SRV_FILENO,
-			gamesh_sdl_render_surface_buffer_add,
+			gamesh_sdl_buffer_add,
 			buffer->surface,
 			sizeof(*buffer->surface),
 			buffer->shmem_fd
@@ -326,7 +331,7 @@ int gamesh_add_buffer(gamesh_shared_buffer_t *buffer)
 
 	int result = -1;
 
-	pollopsrv(add_surface_buffer_response, &result, -1);
+	pollopsrv(add_buffer_response, &result, -1);
 
 	return result;
 }
@@ -340,7 +345,7 @@ gamesh_shared_buffer_t *gamesh_recv_shared_buffer(
 {
 	int shmem_fd = get_fd(header);
 
-	const bool error = opcode != gamesh_sdl_render_surface_buffer_add
+	const bool error = opcode != gamesh_sdl_buffer_add
 		|| length < sizeof(SDL_Surface);
 
 	if (error)
@@ -369,7 +374,7 @@ void set_surface_buffer_response(
 )
 {
 	int *result = context;
-	if (opcode == gamesh_sdl_render_surface_buffer_set)
+	if (opcode == gamesh_sdl_buffer_set)
 		*result = 0;
 }
 
@@ -377,7 +382,7 @@ int gamesh_set_surface_buffer(int surface_id, int buffer_id)
 {
 	int ids[] = { surface_id, buffer_id };
 
-	if (writesrv(gamesh_sdl_render_surface_buffer_set, ids, sizeof(ids)) < 0)
+	if (writesrv(gamesh_sdl_buffer_set, ids, sizeof(ids)) < 0)
 		return -1;
 
 	int result = -1;
@@ -445,4 +450,47 @@ uint64_t gamesh_get_tick(int tick_fd)
 	struct pollfd pollfd = { .fd = tick_fd };
 	pollopfd(pollfd, get_tick_blocking, &result, -1);
 	return result;
+}
+
+void set_surface_position_response(
+	int fd,
+	int opcode,
+	void *buffer,
+	int size,
+	struct msghdr header,
+	void *context
+)
+{
+	int *result = context;
+	if (opcode == gamesh_sdl_render_surface_position)
+		*result = 0;
+}
+
+int gamesh_set_surface_position(int surface_id, int x, int y)
+{
+	if (!init_opcodes())
+		return -1;
+
+	int result = -1;
+
+	int payload[] = { surface_id, x, y };
+	writesrv(
+		gamesh_sdl_render_surface_position,
+		payload,
+		sizeof(payload)
+	);
+
+	pollopsrv(set_surface_position_response, &result, -1);
+
+	return result;
+}
+
+void gamesh_free_surface(int surface_id)
+{
+	writesrv(gamesh_sdl_render_surface_free, &surface_id, sizeof(surface_id));
+}
+
+void gamesh_free_buffer(int buffer_id)
+{
+	writesrv(gamesh_sdl_buffer_free, &buffer_id, sizeof(buffer_id));
 }
