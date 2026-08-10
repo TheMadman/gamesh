@@ -17,3 +17,5 @@ install(FILES gamesh/gamesh.h
 	DESTINATION include)
 install(TARGETS sdl-runner
 	DESTINATION bin)
+install(FILES opcodes.db
+	DESTINATION etc/gamesh)
