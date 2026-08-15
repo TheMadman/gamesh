@@ -8,6 +8,7 @@ configure_file(game.sh game.sh COPYONLY)
 file(COPY images DESTINATION .)
 
 example(keyboard-example)
+example(graphic-example)
 example(surface-example)
 example(animation-example)
 example(tick-example)

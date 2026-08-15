@@ -129,7 +129,7 @@ static void event_listen_response(
 	//close_cmsg_fds(header);
 }
 
-int gamesh_events_listen(int *opcodes, int length)
+int gamesh_events_listen(int *opcodes, unsigned length)
 {
 	// I don't like doing this in every single function but
 	// I can't figure out something better yet
@@ -494,3 +494,77 @@ void gamesh_free_buffer(int buffer_id)
 {
 	writesrv(gamesh_sdl_buffer_free, &buffer_id, sizeof(buffer_id));
 }
+
+gamesh_graphic_t gamesh_create_graphic_from(
+	int x,
+	int y,
+	SDL_Surface *surface
+)
+{
+	// TODO: use iovec to send a bunch of requests at once
+	static const gamesh_graphic_t error = {
+		.surface_id = -1,
+		.buffer_id = -1,
+		.buffer = NULL,
+	};
+
+	if (init_opcodes() < 0)
+		return error;
+
+	gamesh_shared_buffer_t *buffer = gamesh_create_shared_buffer(surface);
+	if (!buffer)
+		return error;
+
+	SDL_DestroySurface(surface);
+
+	int buffer_id = gamesh_add_buffer(buffer);
+	if (buffer_id < 0)
+		goto destroy_shared_buffer;
+
+	int surface_id = gamesh_create_render_surface(x, y);
+	if (surface_id < 0)
+		goto free_buffer;
+
+	return (gamesh_graphic_t) {
+		.surface_id = surface_id,
+		.buffer_id = buffer_id,
+		.buffer = buffer,
+	};
+
+free_buffer:
+	gamesh_free_buffer(buffer_id);
+destroy_shared_buffer:
+	gamesh_destroy_shared_buffer(buffer);
+	return error;
+
+}
+
+gamesh_graphic_t gamesh_create_graphic(int x, int y, int w, int h, SDL_PixelFormat format)
+{
+	static const gamesh_graphic_t error = {
+		.surface_id = -1,
+		.buffer_id = -1,
+		.buffer = NULL,
+	};
+
+	SDL_Surface *surface = SDL_CreateSurface(w, h, format);
+	if (!surface)
+		return error;
+
+	gamesh_graphic_t result = gamesh_create_graphic_from(x, y, surface);
+
+	if (!result.buffer) {
+		SDL_DestroySurface(surface);
+		return error;
+	}
+	return result;
+}
+
+// non-inline declaration of inline functions in gamesh.h
+int gamesh_graphic_blit(
+	gamesh_graphic_t canvas,
+	SDL_Surface *brush,
+	int x,
+	int y
+);
+int gamesh_graphic_commit(gamesh_graphic_t graphic);

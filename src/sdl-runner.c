@@ -117,13 +117,17 @@ vec_t render_surfaces = { .size = sizeof(vec_t) };
 
 SDL_AppResult init_clients(void)
 {
-	render_surfaces = libadt_vector_init(sizeof(client_t), cli_count());
+	int clis = cli_count();
+	if (clis < 0)
+		return SDL_APP_FAILURE;
+
+	render_surfaces = libadt_vector_init(sizeof(client_t), clis);
 	if (!render_surfaces.capacity) {
 		SDL_Log("Couldn't initialize surfaces vector");
 		return SDL_APP_FAILURE;
 	}
 
-	for (int i = 0; i < cli_count(); i++) {
+	for (int i = 0; i < clis; i++) {
 		client_t client = {
 			.surfaces = { .size = sizeof(surface_t) },
 			.buffers = { .size = sizeof(buffer_t) },
@@ -588,10 +592,10 @@ static SDL_FRect get_dest_rect(int x, int y, SDL_Surface *buffer)
 	if (y < 0)
 		y = y + 1 + window_h - h;
 	return (SDL_FRect) {
-		.x = x,
-		.y = y,
-		.h = h,
-		.w = w,
+		.x = (float)x,
+		.y = (float)y,
+		.h = (float)h,
+		.w = (float)w,
 	};
 }
 

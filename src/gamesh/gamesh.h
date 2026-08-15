@@ -46,7 +46,7 @@ typedef struct gamesh_shared_buffer_s gamesh_shared_buffer_t;
  * 	event listener.
  * \returns A file descriptor for receiving the given events.
  */
-int gamesh_events_listen(int *opcodes, int length);
+int gamesh_events_listen(int *opcodes, unsigned length);
 
 /**
  * \brief This function returns a file descriptor, which will
@@ -152,7 +152,7 @@ int gamesh_add_buffer(gamesh_shared_buffer_t *buffer);
 void gamesh_free_buffer(int buffer_id);
 
 /**
- * \brief Sets the buffer to use as the current active buffer.
+ * \brief Sets the given surface's active buffer to the given buffer.
  *
  * \param surface_id An ID returned by gamesh_create_render_surface().
  * \param buffer An ID returned by gamesh_add_buffer().
@@ -199,6 +199,91 @@ int gamesh_get_tick_fd(void);
  * 	since runner start, or (uint64_t)-1 on failure.
  */
 uint64_t gamesh_get_tick(int tick_fd);
+
+/**
+ * \brief A convenience type for creating a single, updatable
+ * 	image.
+ */
+typedef struct gamesh_graphic_s {
+	int surface_id;
+	int buffer_id;
+	gamesh_shared_buffer_t *buffer;
+} gamesh_graphic_t;
+
+/**
+ * \brief Creates a graphic that can be updated with
+ * 	gamesh_graphic_blit() and gamesh_graphic_commit().
+ *
+ * \param x The `x` position of the resulting graphic, as
+ * 	passed to gamesh_create_render_surface().
+ * \param y The `y` position of the resulting graphic, as
+ * 	passed to gamesh_create_render_surface().
+ * \param w The width of the graphic to create.
+ * \param h The height of the graphic to create.
+ * \param format The SDL pixel format to use for the graphic.
+ *
+ * \returns On error, a struct with .surface_id == -1,
+ * 	.buffer_id == -1, and .buffer = NULL is returned.
+ * 	On success, a valid value is returned and can be
+ * 	used.
+ */
+gamesh_graphic_t gamesh_create_graphic(
+	int x,
+	int y,
+	int w,
+	int h,
+	SDL_PixelFormat format
+);
+
+gamesh_graphic_t gamesh_create_graphic_from(
+	int x,
+	int y,
+	SDL_Surface *surface
+);
+
+/**
+ * \brief Blit the given canvas with the given brush, where
+ * 	the x and y coordinates are the top-left of the brush's
+ * 	location.
+ *
+ * \param canvas The graphic to blit
+ * \param brush The prush to blit the canvas with
+ * \param x The leftmost coordinate of the brush location
+ * \param y The topmost coordinate of the brush location
+ *
+ * \returns 0 on success, -1 on failure.
+ */
+inline int gamesh_graphic_blit(
+	gamesh_graphic_t canvas,
+	SDL_Surface *brush,
+	int x,
+	int y
+)
+{
+	SDL_Rect dest = {.x = x, .y = y};
+	if (!SDL_BlitSurface(
+		gamesh_get_shared_buffer_surface(canvas.buffer),
+		NULL,
+		brush,
+		&dest
+	))
+		return -1;
+	return 0;
+}
+
+/**
+ * \brief Declare all pending changes for rendering.
+ *
+ * \param graphic The graphic to render.
+ *
+ * \returns 0 on success, -1 on failure.
+ */
+inline int gamesh_graphic_commit(gamesh_graphic_t graphic)
+{
+	if (gamesh_set_surface_buffer(graphic.surface_id, graphic.buffer_id) < 0)
+		return -1;
+	return 0;
+}
 
 #ifdef __cplusplus
 } // extern "C"
