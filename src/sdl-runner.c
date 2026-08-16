@@ -75,6 +75,7 @@ vec_t mouse_event_listeners = { .size = sizeof(int) };
 vec_t gamepad_event_listeners = { .size = sizeof(int) };
 vec_t quit_event_listeners = { .size = sizeof(int) };
 vec_t tick_event_listeners = { .size = sizeof(int) };
+vec_t resize_event_listeners = { .size = sizeof(int) };
 
 typedef struct surface_s surface_t;
 typedef struct surface_s {
@@ -199,6 +200,7 @@ static buffer_t *get_buffer(int fd, int buffer_id)
 	OPERATION(gamesh_sdl_event_mouse) \
 	OPERATION(gamesh_sdl_event_gamepad) \
 	OPERATION(gamesh_sdl_event_tick) \
+	OPERATION(gamesh_sdl_event_resize) \
 	OPERATION(gamesh_sdl_render_surface) \
 	OPERATION(gamesh_sdl_buffer_add) \
 	OPERATION(gamesh_sdl_buffer_set) \
@@ -247,6 +249,7 @@ vec_t *vec_for_opcode(int opcode)
 		: opcode == gamesh_sdl_event_gamepad ? &gamepad_event_listeners
 		: opcode == gamesh_sdl_event_quit ? &quit_event_listeners
 		: opcode == gamesh_sdl_event_tick ? &tick_event_listeners
+		: opcode == gamesh_sdl_event_resize ? &resize_event_listeners
 		: NULL;
 }
 
@@ -412,7 +415,17 @@ static int handle_new_buffer(int fd, gamesh_shared_buffer_t *recv_buffer)
 	return client->buffers.length - 1;
 }
 
-int handle_set_surface_buffer(int fd, int *ids, int size)
+static void emit_resize(int w, int h)
+{
+	int dimensions[] = { w, h };
+
+	for (int i = 0; i < resize_event_listeners.length; i++) {
+		int *fd = index(resize_event_listeners, i);
+		writeop(*fd, gamesh_sdl_event_resize, dimensions, sizeof(dimensions));
+	}
+}
+
+static int handle_set_surface_buffer(int fd, int *ids, int size)
 {
 	if (size < sizeof(int[2]))
 		return -1;
@@ -445,6 +458,7 @@ int handle_set_surface_buffer(int fd, int *ids, int size)
 			SDL_Log("Couldn't create window: %s", SDL_GetError());
 			return SDL_APP_FAILURE;
 		}
+		emit_resize(buffer->w, buffer->h);
 
 		if (!(renderer = SDL_CreateRenderer(window, NULL))) {
 			SDL_Log("Couldn't create renderer: %s", SDL_GetError());
@@ -475,6 +489,7 @@ int handle_set_surface_buffer(int fd, int *ids, int size)
 			SDL_Log("Couldn't set new window size: %s", SDL_GetError());
 			return SDL_APP_FAILURE;
 		}
+		emit_resize(buffer->w, buffer->h);
 	}
 
 	return 0;

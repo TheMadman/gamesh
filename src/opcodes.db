@@ -7,6 +7,7 @@ gamesh_sdl_event_keyboard
 gamesh_sdl_event_mouse
 gamesh_sdl_event_gamepad
 gamesh_sdl_event_tick
+gamesh_sdl_event_resize
 
 gamesh_sdl_render_surface
 gamesh_sdl_buffer_add
