@@ -262,9 +262,9 @@ inline int gamesh_graphic_blit(
 {
 	SDL_Rect dest = {.x = x, .y = y};
 	if (!SDL_BlitSurface(
-		gamesh_get_shared_buffer_surface(canvas.buffer),
-		NULL,
 		brush,
+		NULL,
+		gamesh_get_shared_buffer_surface(canvas.buffer),
 		&dest
 	))
 		return -1;
