@@ -447,6 +447,9 @@ static int handle_set_surface_buffer(int fd, int *ids, int size)
 
 	surface->active_buffer = buffer_id;
 	surface->changed = 1;
+	int
+		window_w = buffer->w + surface->x,
+		window_h = buffer->h + surface->y;
 
 	if (!renderer) {
 		if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
@@ -454,7 +457,7 @@ static int handle_set_surface_buffer(int fd, int *ids, int size)
 			return SDL_APP_FAILURE;
 		}
 
-		if (!(window = SDL_CreateWindow(window_title, buffer->w, buffer->h, 0))) {
+		if (!(window = SDL_CreateWindow(window_title, window_w, window_h, 0))) {
 			SDL_Log("Couldn't create window: %s", SDL_GetError());
 			return SDL_APP_FAILURE;
 		}
@@ -476,20 +479,20 @@ static int handle_set_surface_buffer(int fd, int *ids, int size)
 		);
 	}
 
-	int window_w = 0, window_h = 0;
-	if (!SDL_GetWindowSize(window, &window_w, &window_h)) {
+	int current_window_w = 0, current_window_h = 0;
+	if (!SDL_GetWindowSize(window, &current_window_w, &current_window_h)) {
 		SDL_Log("Couldn't get window size: %s", SDL_GetError());
 		return SDL_APP_FAILURE;
 	}
 
-	if (window_w < buffer->w || window_h < buffer->h) {
-		int new_w = MAX(buffer->w, window_w);
-		int new_h = MAX(buffer->h, window_h);
+	if (current_window_w < window_w || current_window_h < window_h) {
+		int new_w = MAX(current_window_w, window_w);
+		int new_h = MAX(current_window_h, window_h);
 		if (!SDL_SetWindowSize(window, new_w, new_h)) {
 			SDL_Log("Couldn't set new window size: %s", SDL_GetError());
 			return SDL_APP_FAILURE;
 		}
-		emit_resize(buffer->w, buffer->h);
+		emit_resize(new_w, new_h);
 	}
 
 	return 0;
