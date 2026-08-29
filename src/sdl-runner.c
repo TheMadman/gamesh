@@ -448,8 +448,10 @@ static int handle_set_surface_buffer(int fd, int *ids, int size)
 	surface->active_buffer = buffer_id;
 	surface->changed = 1;
 	int
-		window_w = buffer->w + surface->x,
-		window_h = buffer->h + surface->y;
+		surface_x_w = -1 < surface->x ? surface->x: 1 - surface->x,
+		surface_y_h = -1 < surface->y ? surface->y: 1 - surface->y,
+		window_w = buffer->w + surface_x_w,
+		window_h = buffer->h + surface_y_h;
 
 	if (!renderer) {
 		if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
