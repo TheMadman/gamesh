@@ -19,7 +19,13 @@ int main(int argc, char **argv)
 	if (!local_png)
 		perror_exit("Couldn't find %s", argv[1]);
 
-	gamesh_graphic_t graphic = gamesh_create_graphic_from(-1, -1, local_png);
+	gamesh_graphic_t graphic = gamesh_create_graphic_from(
+		-1,
+		-1,
+		local_png->w,
+		local_png->h,
+		local_png
+	);
 	if (!graphic.buffer)
 		perror_exit("gamesh_create_graphic_from");
 

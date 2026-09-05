@@ -55,11 +55,7 @@ static buffer_t *next_free_buffer(buffer_t *buffer)
 // I should probably add some inline functions like this in libadt..
 static int append(vec_t *vec, void *data)
 {
-	vec_t attempt = libadt_vector_append(*vec, data);
-	if (libadt_vector_identity(attempt, *vec))
-		return -1;
-	*vec = attempt;
-	return 0;
+	return libadt_vector_push(vec, data);
 }
 
 SDL_Window *window = NULL;
@@ -87,6 +83,8 @@ typedef struct surface_s {
 			int changed;
 			int x;
 			int y;
+			int w;
+			int h;
 		};
 		surface_t *next_free;
 	};
@@ -339,7 +337,7 @@ static int handle_new_listener(int fd, int *opcodes, int count)
 
 static int handle_new_surface(int fd, int *buffer, int size)
 {
-	if (size < sizeof(int[2]))
+	if (size < sizeof(int[4]))
 		return -1;
 
 	surface_t surface = {
@@ -348,6 +346,8 @@ static int handle_new_surface(int fd, int *buffer, int size)
 		.active_buffer = 0,
 		.x = buffer[0],
 		.y = buffer[1],
+		.w = buffer[2],
+		.h = buffer[3],
 	};
 
 	client_t *client = get_client(fd);
@@ -450,8 +450,8 @@ static int handle_set_surface_buffer(int fd, int *ids, int size)
 	int
 		surface_x_w = -1 < surface->x ? surface->x: 1 - surface->x,
 		surface_y_h = -1 < surface->y ? surface->y: 1 - surface->y,
-		window_w = buffer->w + surface_x_w,
-		window_h = buffer->h + surface_y_h;
+		window_w = surface->w + surface_x_w,
+		window_h = surface->h + surface_y_h;
 
 	if (!renderer) {
 		if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
@@ -463,7 +463,7 @@ static int handle_set_surface_buffer(int fd, int *ids, int size)
 			SDL_Log("Couldn't create window: %s", SDL_GetError());
 			return SDL_APP_FAILURE;
 		}
-		emit_resize(buffer->w, buffer->h);
+		emit_resize(surface->w, surface->h);
 
 		if (!(renderer = SDL_CreateRenderer(window, NULL))) {
 			SDL_Log("Couldn't create renderer: %s", SDL_GetError());
@@ -599,10 +599,14 @@ static void handle_requests(
 	writeop(fd, error_opcode, NULL, 0);
 }
 
-static SDL_FRect get_dest_rect(int x, int y, SDL_Surface *buffer)
+static SDL_FRect get_dest_rect(surface_t *surface)
 {
+	int
+		w = surface->w,
+		h = surface->h,
+		x = surface->x,
+		y = surface->y;
 	static const SDL_FRect error = { 0 };
-	int w = buffer->w, h = buffer->h;
 	int window_w, window_h;
 	if (!SDL_GetWindowSize(window, &window_w, &window_h))
 		return error;
@@ -644,7 +648,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 					surface->changed = 0;
 				}
 
-				SDL_FRect dest = get_dest_rect(surface->x, surface->y, buffer);
+				SDL_FRect dest = get_dest_rect(surface);
 				SDL_RenderTexture(renderer, surface->texture, NULL, &dest);
 
 				surface->changed = 0;

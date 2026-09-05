@@ -188,12 +188,12 @@ static void handle_render_surface_response(
 	*(int*)context = *(int*)data;
 }
 
-int gamesh_create_render_surface(int x, int y)
+int gamesh_create_render_surface(int x, int y, int w, int h)
 {
 	if (init_opcodes() < 0)
 		return -1;
 
-	int coords[2] = { x, y };
+	int coords[] = { x, y, w, h };
 
 	if (writesrv(gamesh_sdl_render_surface, coords, sizeof(coords)) < 0)
 		return -1;
@@ -498,6 +498,8 @@ void gamesh_free_buffer(int buffer_id)
 gamesh_graphic_t gamesh_create_graphic_from(
 	int x,
 	int y,
+	int w,
+	int h,
 	SDL_Surface *surface
 )
 {
@@ -521,7 +523,7 @@ gamesh_graphic_t gamesh_create_graphic_from(
 	if (buffer_id < 0)
 		goto destroy_shared_buffer;
 
-	int surface_id = gamesh_create_render_surface(x, y);
+	int surface_id = gamesh_create_render_surface(x, y, w, h);
 	if (surface_id < 0)
 		goto free_buffer;
 
@@ -551,7 +553,7 @@ gamesh_graphic_t gamesh_create_graphic(int x, int y, int w, int h, SDL_PixelForm
 	if (!surface)
 		return error;
 
-	gamesh_graphic_t result = gamesh_create_graphic_from(x, y, surface);
+	gamesh_graphic_t result = gamesh_create_graphic_from(x, y, w, h, surface);
 
 	if (!result.buffer) {
 		SDL_DestroySurface(surface);

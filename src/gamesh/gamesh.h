@@ -79,7 +79,7 @@ void gamesh_event_close(int fd);
  *
  * \returns -1 on error, a render surface ID on success.
  */
-int gamesh_create_render_surface(int x, int y);
+int gamesh_create_render_surface(int x, int y, int w, int h);
 
 /**
  * \brief Repositions an existing surface.
@@ -238,6 +238,8 @@ gamesh_graphic_t gamesh_create_graphic(
 gamesh_graphic_t gamesh_create_graphic_from(
 	int x,
 	int y,
+	int w,
+	int h,
 	SDL_Surface *surface
 );
 

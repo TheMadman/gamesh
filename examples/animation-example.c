@@ -17,7 +17,7 @@ int main(int argc, char **argv)
 	argv++;
 
 	// creates a surface at the top left of the window
-	int surface_id = gamesh_create_render_surface(0, 0);
+	int surface_id = gamesh_create_render_surface(0, 0, 640, 480);
 
 	gamesh_shared_buffer_t *shared_pngs[2] = { 0 };
 	int buffer_ids[2] = { -1, -1 };
