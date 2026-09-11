@@ -570,3 +570,4 @@ int gamesh_graphic_blit(
 	int y
 );
 int gamesh_graphic_commit(gamesh_graphic_t graphic);
+int gamesh_get_fd(struct msghdr header);

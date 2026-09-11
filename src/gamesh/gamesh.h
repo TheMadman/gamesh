@@ -287,6 +287,20 @@ inline int gamesh_graphic_commit(gamesh_graphic_t graphic)
 	return 0;
 }
 
+inline int gamesh_get_fd(struct msghdr header)
+{
+	struct cmsghdr *chdr = CMSG_FIRSTHDR(&header);
+	if (!chdr)
+		return -1;
+
+	if (chdr->cmsg_level != SOL_SOCKET || chdr->cmsg_type != SCM_RIGHTS)
+		return -1;
+
+	int result = -1;
+	memcpy(&result, CMSG_DATA(chdr), sizeof(result));
+	return result;
+}
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
