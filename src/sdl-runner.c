@@ -249,7 +249,10 @@ static int send_event(int opcode, SDL_Event *event)
 
 	for (size_t i = 0; i < listeners->length; i++) {
 		int *event_fd = index(*listeners, (int)i);
-		writeop(*event_fd, opcode, event, sizeof(*event));
+		struct pollfd event_pollfd = {.fd = *event_fd, .events = POLLOUT};
+		poll(&event_pollfd, 1, 0);
+		if (event_pollfd.revents & POLLOUT)
+			writeop(*event_fd, opcode, event, sizeof(*event));
 	}
 	return 0;
 }
