@@ -120,7 +120,7 @@ SDL_AppResult init_clients(void)
 	if (clis < 0)
 		return SDL_APP_FAILURE;
 
-	render_surfaces = libadt_vector_init(sizeof(client_t), clis);
+	render_surfaces = libadt_vector_init(sizeof(client_t), (unsigned)clis);
 	if (!render_surfaces.capacity) {
 		SDL_Log("Couldn't initialize surfaces vector");
 		return SDL_APP_FAILURE;
@@ -145,12 +145,12 @@ static client_t *get_client(int fd)
 {
 	const int i = fd - CLI_BEGIN;
 	const bool error = i < 0
-		|| clients.length <= i;
+		|| clients.length <= (unsigned)i;
 
 	if (error)
 		return NULL;
 
-	return index(clients, i);
+	return index(clients, (unsigned)i);
 }
 
 static surface_t *get_surface(int fd, int surface_id)
@@ -160,12 +160,12 @@ static surface_t *get_surface(int fd, int surface_id)
 		return NULL;
 
 	const bool error = surface_id < 0
-		|| client->surfaces.length <= surface_id;
+		|| client->surfaces.length <= (unsigned)surface_id;
 
 	if (error)
 		return NULL;
 
-	surface_t *result = index(client->surfaces, surface_id);
+	surface_t *result = index(client->surfaces, (unsigned)surface_id);
 	if (!result->allocated)
 		return NULL;
 	return result;
@@ -178,12 +178,12 @@ static buffer_t *get_buffer(int fd, int buffer_id)
 		return NULL;
 
 	const bool error = buffer_id < 0
-		|| client->buffers.length <= buffer_id;
+		|| client->buffers.length <= (unsigned)buffer_id;
 
 	if (error)
 		return NULL;
 
-	buffer_t *result = index(client->buffers, buffer_id);
+	buffer_t *result = index(client->buffers, (unsigned)buffer_id);
 
 	if (!result->allocated)
 		return NULL;
@@ -248,7 +248,7 @@ static int send_event(int opcode, SDL_Event *event)
 		return -1;
 
 	for (size_t i = 0; i < listeners->length; i++) {
-		int *event_fd = index(*listeners, (int)i);
+		int *event_fd = index(*listeners, i);
 		struct pollfd event_pollfd = {.fd = *event_fd, .events = POLLOUT};
 		poll(&event_pollfd, 1, 0);
 		if (event_pollfd.revents & POLLOUT)
@@ -330,7 +330,10 @@ static int handle_new_listener(int fd, int *opcodes, int count)
 
 static int handle_new_surface(int fd, int *buffer, int size)
 {
-	if (size < sizeof(int[4]))
+	if (size < 0)
+		return -1;
+
+	if ((unsigned)size < sizeof(int[4]))
 		return -1;
 
 	surface_t surface = {
@@ -358,10 +361,13 @@ static int handle_new_surface(int fd, int *buffer, int size)
 		return (int)index;
 	}
 
+	if (INT_MAX < client->surfaces.length + 1)
+		return -1;
+
 	if (append(&client->surfaces, &surface) < 0)
 		return -1;
 
-	return client->surfaces.length - 1;
+	return (int)(client->surfaces.length - 1);
 }
 
 static int update_texture(SDL_Surface *surface, SDL_Texture *texture)
@@ -377,9 +383,7 @@ static int update_texture(SDL_Surface *surface, SDL_Texture *texture)
 
 static int handle_new_buffer(int fd, gamesh_shared_buffer_t *recv_buffer)
 {
-	const bool error = recv_buffer == NULL;
-
-	if (error)
+	if (recv_buffer == NULL)
 		return -1;
 
 	client_t *client = get_client(fd);
@@ -402,17 +406,20 @@ static int handle_new_buffer(int fd, gamesh_shared_buffer_t *recv_buffer)
 		return (int)index;
 	}
 
+	if (INT_MAX < client->buffers.length + 1)
+		return -1;
+
 	if (append(&client->buffers, &result) < 0)
 		return -1;
 
-	return client->buffers.length - 1;
+	return (int)(client->buffers.length - 1);
 }
 
 static void emit_resize(int w, int h)
 {
 	int dimensions[] = { w, h };
 
-	for (int i = 0; i < resize_event_listeners.length; i++) {
+	for (size_t i = 0; i < resize_event_listeners.length; i++) {
 		int *fd = index(resize_event_listeners, i);
 		writeop(*fd, gamesh_sdl_event_resize, dimensions, sizeof(dimensions));
 	}
@@ -420,7 +427,10 @@ static void emit_resize(int w, int h)
 
 static int handle_set_surface_buffer(int fd, int *ids, int size)
 {
-	if (size < sizeof(int[2]))
+	if (size < 0)
+		return -1;
+
+	if ((size_t)size < sizeof(int[2]))
 		return -1;
 
 	int surface_id = ids[0];
@@ -495,7 +505,10 @@ static int handle_set_surface_buffer(int fd, int *ids, int size)
 
 static void handle_free_surface(int fd, int *surface_id, int size)
 {
-	if (size < sizeof(int))
+	if (size < 0)
+		return;
+
+	if ((size_t)size < sizeof(int))
 		return;
 
 	client_t *client = get_client(fd);
@@ -516,7 +529,10 @@ static void handle_free_surface(int fd, int *surface_id, int size)
 
 static void handle_free_buffer(int fd, int *buffer_id, int size)
 {
-	if (size < sizeof(int))
+	if (size < 0)
+		return;
+
+	if ((unsigned)size < sizeof(int))
 		return;
 
 	client_t *client = get_client(fd);
@@ -542,12 +558,11 @@ static void handle_requests(
 	void *context
 )
 {
-	SDL_AppResult *result = context;
 	if (fd == SRV_FILENO)
 		return;
 
 	if (opcode == gamesh_event_listen_op) {
-		if (-1 < handle_new_listener(get_fd(header), buffer, size / sizeof(int))) {
+		if (-1 < handle_new_listener(get_fd(header), buffer, (long unsigned)size / sizeof(int))) {
 			writeop(fd, gamesh_event_listen_op, NULL, 0);
 			return;
 		}
@@ -627,7 +642,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 	for (int i = CLI_BEGIN; i < cli_end(); i++) {
 		client_t *client = get_client(i);
-		for (int j = 0; j < client->surfaces.length; j++) {
+		for (size_t j = 0; j < client->surfaces.length; j++) {
 			surface_t *surface = index(client->surfaces, j);
 
 			if (surface->texture) {
@@ -650,7 +665,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 	}
 	SDL_RenderPresent(renderer);
 
-	for (int i = 0; i < tick_event_listeners.length; i++) {
+	for (size_t i = 0; i < tick_event_listeners.length; i++) {
 		int *event_fd = index(tick_event_listeners, i);
 		Uint64 current_tick = SDL_GetTicks();
 		writeop(
