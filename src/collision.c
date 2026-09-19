@@ -37,7 +37,7 @@ typedef struct {
 	};
 } collision_t;
 
-vec_t positions = {.size = sizeof(SDL_FRect)};
+vec_t positions = {.size = sizeof(collision_t)};
 
 #define MESSAGE_TYPES(OPERATION) \
 	OPERATION(gamesh_collision_surface) \
@@ -47,6 +47,54 @@ vec_t positions = {.size = sizeof(SDL_FRect)};
 #define INIT_GLOBAL(MESSAGE) int MESSAGE = -1;
 
 MESSAGE_TYPES(INIT_GLOBAL)
+
+static void handle_response(
+	int fd,
+	int opcode,
+	void *data,
+	int size,
+	struct msghdr header,
+	void *context
+)
+{
+	int *client_fd = context;
+	sendmsgop(
+		*client_fd,
+		opcode,
+		data,
+		size,
+		header.msg_control,
+		header.msg_controllen
+	);
+
+	close_cmsg_fds(header);
+}
+
+static void handle_request(
+	int fd,
+	int opcode,
+	void *data,
+	int size,
+	struct msghdr header,
+	void *context
+)
+{
+	if (!is_cli(fd))
+		return;
+
+	sendmsgop(
+		SRV_FILENO,
+		opcode,
+		data,
+		size,
+		header.msg_control,
+		header.msg_controllen
+	);
+
+	pollopsrv(handle_response, &fd, -1);
+
+	close_cmsg_fds(header);
+}
 
 typedef struct {
 	int *dest;
@@ -73,4 +121,15 @@ int main()
 	}
 
 	close_opcode_db(db);
+
+	int ncli = cli_count();
+	do {
+		struct pollfd result = pollop(
+			handle_request,
+			NULL,
+			-1
+		);
+		if (is_cli(result.fd) && result.revents & POLLHUP)
+			ncli--;
+	} while (0 < ncli);
 }

@@ -4,7 +4,7 @@ function(example target)
 	target_include_directories(${target} PUBLIC ../src/gamesh)
 endfunction()
 
-configure_file(game.sh game.sh COPYONLY)
+configure_file(happy.sh happy.sh COPYONLY)
 file(COPY images DESTINATION .)
 
 example(keyboard-example)
