@@ -15,3 +15,7 @@ gamesh_sdl_buffer_set
 gamesh_sdl_render_surface_position
 gamesh_sdl_render_surface_free
 gamesh_sdl_buffer_free
+
+gamesh_collision_surface
+gamesh_collision_surface_position
+gamesh_collision_surface_free

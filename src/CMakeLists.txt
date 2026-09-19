@@ -2,6 +2,7 @@ find_package(SDL3 REQUIRED)
 
 add_library(gamesh SHARED gamesh.c)
 add_executable(sdl-runner sdl-runner.c)
+add_executable(collision collision.c)
 
 target_include_directories(gamesh
 	PUBLIC
@@ -10,11 +11,14 @@ target_include_directories(gamesh
 
 target_link_libraries(gamesh srvsh SDL3::SDL3)
 target_link_libraries(sdl-runner SDL3::SDL3 gamesh srvsh adt)
+target_link_libraries(collision gamesh srvsh adt)
 
 install(TARGETS gamesh
 	DESTINATION lib)
 install(FILES gamesh/gamesh.h
 	DESTINATION include)
+install(FILES gamesh/collision
+	DESTINATION include/gamesh)
 install(TARGETS sdl-runner
 	DESTINATION bin)
 install(FILES opcodes.db
